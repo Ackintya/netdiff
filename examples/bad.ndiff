@@ -1,0 +1,51 @@
+{
+  "schema_version": "ndiff/v1",
+  "metadata": {
+    "netdiff_version": "0.1.0",
+    "captured_at": "2026-10-09T17:01:00Z",
+    "hostname": "developer-workstation-failing",
+    "os": "linux"
+  },
+  "target": {
+    "raw": "api.internal.company:443",
+    "host": "api.internal.company",
+    "port": 443,
+    "protocol": "tcp",
+    "is_ip": false
+  },
+  "dns": {
+    "hostname": "api.internal.company",
+    "nameservers": ["192.168.1.1"],
+    "a_records": ["10.40.8.21"],
+    "resolution_ms": 12,
+    "success": true
+  },
+  "route": {
+    "destination_ip": "10.40.8.21",
+    "table": 254,
+    "table_name": "main",
+    "gateway": "192.168.1.1",
+    "egress_interface": "eth0",
+    "preferred_source": "192.168.1.84",
+    "metric": 100,
+    "success": true
+  },
+  "interface": {
+    "name": "eth0",
+    "index": 3,
+    "addresses": ["192.168.1.84/24"],
+    "mtu": 1500,
+    "flags": ["UP", "BROADCAST", "MULTICAST"],
+    "oper_state": "up",
+    "is_tunnel": false,
+    "role": "physical"
+  },
+  "tcp": {
+    "status": "timeout",
+    "remote_ip": "10.40.8.21",
+    "remote_port": 443
+  },
+  "proxy": {
+    "active": false
+  }
+}
