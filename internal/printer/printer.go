@@ -65,6 +65,19 @@ func (p *Printer) PrintComparison(report *model.ComparisonReport, asJSON, verbos
 		fmt.Fprintf(p.Out, "%s⚠ different%s\n\n", ColorYellow, ColorReset)
 	}
 
+	// Policy Rule
+	if (w.Route != nil && w.Route.PolicyRule != "") || (f.Route != nil && f.Route.PolicyRule != "") {
+		p.printSectionHeader("Policy Rule")
+		wRule := formatRule(w.Route)
+		fRule := formatRule(f.Route)
+		fmt.Fprintf(p.Out, "%-24s %-24s\n", wRule, fRule)
+		if wRule == fRule {
+			fmt.Fprintf(p.Out, "%s✓ same%s\n\n", ColorGreen, ColorReset)
+		} else {
+			fmt.Fprintf(p.Out, "%s⚠ different%s\n\n", ColorYellow, ColorReset)
+		}
+	}
+
 	// Route
 	p.printSectionHeader("Route Table & Egress")
 	wRoute := formatRoute(w.Route)
@@ -110,6 +123,11 @@ func (p *Printer) PrintComparison(report *model.ComparisonReport, asJSON, verbos
 		} else if d.Relevance == model.RelevanceMedium {
 			medDiffs = append(medDiffs, d)
 		}
+	}
+
+	if report.EarliestDivergence != "" {
+		fmt.Fprintf(p.Out, "%s%s>>> ROOT CAUSE: EARLIEST PATH DIVERGENCE <<<%s\n", ColorBold, ColorYellow, ColorReset)
+		fmt.Fprintf(p.Out, "%s%s%s\n\n", ColorBold, report.EarliestDivergence, ColorReset)
 	}
 
 	if len(highDiffs) > 0 {
@@ -182,4 +200,11 @@ func formatTCP(t *model.TCPReport) string {
 		return fmt.Sprintf("connected (%dms)", t.LatencyMs)
 	}
 	return string(t.Status)
+}
+
+func formatRule(r *model.RouteReport) string {
+	if r == nil || r.PolicyRule == "" {
+		return "main"
+	}
+	return r.PolicyRule
 }

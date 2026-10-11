@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"netdiff/internal/dag"
 	"netdiff/internal/normalize"
 	"netdiff/pkg/model"
 )
@@ -13,12 +14,19 @@ func Compare(workingRaw, failingRaw *model.Snapshot) *model.ComparisonReport {
 	working := normalize.Snapshot(workingRaw)
 	failing := normalize.Snapshot(failingRaw)
 
+	d := dag.BuildDAG(working, failing)
+	earliest := ""
+	if d != nil && d.EarliestDivergence != nil {
+		earliest = fmt.Sprintf("%s: %s != %s", d.EarliestDivergence.Type, d.EarliestDivergence.WorkingVal, d.EarliestDivergence.FailingVal)
+	}
+
 	report := &model.ComparisonReport{
-		WorkingSnapshot: working,
-		FailingSnapshot: failing,
-		WorkingHost:     working.Metadata.Hostname,
-		FailingHost:     failing.Metadata.Hostname,
-		Target:          working.Target,
+		WorkingSnapshot:    working,
+		FailingSnapshot:    failing,
+		WorkingHost:        working.Metadata.Hostname,
+		FailingHost:        failing.Metadata.Hostname,
+		Target:             working.Target,
+		EarliestDivergence: earliest,
 	}
 
 	var diffs []model.Difference
@@ -143,6 +151,18 @@ func diffRoute(w, f *model.RouteReport) []model.Difference {
 	var diffs []model.Difference
 	if w == nil || f == nil {
 		return diffs
+	}
+
+	if w.PolicyRule != f.PolicyRule && (w.PolicyRule != "" || f.PolicyRule != "") {
+		diffs = append(diffs, model.Difference{
+			Category:       "Policy",
+			Field:          "policy_rule",
+			WorkingValue:   firstNonEmpty(w.PolicyRule, "lookup main"),
+			FailingValue:   firstNonEmpty(f.PolicyRule, "missing / lookup main"),
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Policy Rule",
+			Rationale:      "Policy routing rules diverge before route table lookup occurs.",
+		})
 	}
 
 	if w.Table != f.Table {

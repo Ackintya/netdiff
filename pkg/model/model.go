@@ -137,11 +137,12 @@ type Difference struct {
 
 // ComparisonReport is the evaluated output comparing two snapshots.
 type ComparisonReport struct {
-	Target          Target         `json:"target"`
-	WorkingHost     string         `json:"working_host"`
-	FailingHost     string         `json:"failing_host"`
-	WorkingSnapshot *Snapshot      `json:"working_snapshot"`
-	FailingSnapshot *Snapshot      `json:"failing_snapshot"`
-	Differences     []Difference   `json:"differences"`
-	Summary         string         `json:"summary"`
+	Target             Target         `json:"target"`
+	WorkingHost        string         `json:"working_host"`
+	FailingHost        string         `json:"failing_host"`
+	WorkingSnapshot    *Snapshot      `json:"working_snapshot"`
+	FailingSnapshot    *Snapshot      `json:"failing_snapshot"`
+	Differences        []Difference   `json:"differences"`
+	EarliestDivergence string         `json:"earliest_divergence,omitempty"`
+	Summary            string         `json:"summary"`
 }

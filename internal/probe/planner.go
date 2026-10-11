@@ -11,6 +11,7 @@ import (
 	"netdiff/internal/collector/neighbor"
 	"netdiff/internal/collector/proxy"
 	"netdiff/internal/collector/route"
+	"netdiff/internal/collector/rule"
 	"netdiff/internal/collector/tcp"
 	"netdiff/pkg/model"
 )
@@ -22,6 +23,7 @@ const (
 
 type Engine struct {
 	dnsCollector      *dns.Collector
+	ruleCollector     rule.Collector
 	routeCollector    route.Collector
 	ifaceCollector    iface.Collector
 	neighborCollector neighbor.Collector
@@ -32,6 +34,7 @@ type Engine struct {
 func NewEngine() *Engine {
 	return &Engine{
 		dnsCollector:      dns.New(),
+		ruleCollector:     rule.New(),
 		routeCollector:    route.New(),
 		ifaceCollector:    iface.New(),
 		neighborCollector: neighbor.New(),
@@ -87,6 +90,10 @@ func (e *Engine) Capture(ctx context.Context, target model.Target) (*model.Snaps
 		if err != nil {
 			snapshot.CollectionErrors = append(snapshot.CollectionErrors, "route: "+err.Error())
 		} else {
+			// Also collect matching policy rule
+			if matchedRule, _, err := e.ruleCollector.Collect(ctx, destIP); err == nil && matchedRule != "" {
+				rReport.PolicyRule = matchedRule
+			}
 			snapshot.Route = rReport
 			egressIface = rReport.EgressInterface
 			gatewayIP = rReport.Gateway
