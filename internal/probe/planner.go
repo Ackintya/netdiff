@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"netdiff/internal/collector/dns"
+	"netdiff/internal/collector/firewall"
 	"netdiff/internal/collector/iface"
 	"netdiff/internal/collector/neighbor"
 	"netdiff/internal/collector/proxy"
@@ -29,6 +30,7 @@ type Engine struct {
 	neighborCollector neighbor.Collector
 	tcpCollector      *tcp.Collector
 	proxyCollector    *proxy.Collector
+	firewallCollector firewall.Collector
 }
 
 func NewEngine() *Engine {
@@ -40,6 +42,7 @@ func NewEngine() *Engine {
 		neighborCollector: neighbor.New(),
 		tcpCollector:      tcp.New(5 * time.Second),
 		proxyCollector:    proxy.New(),
+		firewallCollector: firewall.New(),
 	}
 }
 
@@ -62,6 +65,11 @@ func (e *Engine) Capture(ctx context.Context, target model.Target) (*model.Snaps
 		snapshot.Proxy = pReport
 	} else {
 		snapshot.CollectionErrors = append(snapshot.CollectionErrors, "proxy: "+err.Error())
+	}
+
+	// 1b. Firewall Collection
+	if fReport, err := e.firewallCollector.Collect(ctx); err == nil {
+		snapshot.Firewall = fReport
 	}
 
 	// 2. DNS Resolution

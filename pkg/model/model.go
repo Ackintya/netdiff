@@ -100,6 +100,12 @@ type SnapshotMetadata struct {
 	Kernel         string    `json:"kernel,omitempty"`
 }
 
+// FirewallReport captures active host firewall filtering systems.
+type FirewallReport struct {
+	Backend string `json:"backend,omitempty"` // "nftables", "iptables", "none"
+	Active  bool   `json:"active"`
+}
+
 // Snapshot is the portable .ndiff file structure containing all relevant network state.
 type Snapshot struct {
 	SchemaVersion    string            `json:"schema_version"`
@@ -111,6 +117,7 @@ type Snapshot struct {
 	Neighbor         *NeighborReport   `json:"neighbor,omitempty"`
 	TCP              *TCPReport        `json:"tcp,omitempty"`
 	Proxy            *ProxyReport      `json:"proxy,omitempty"`
+	Firewall         *FirewallReport   `json:"firewall,omitempty"`
 	CollectionErrors []string          `json:"collection_errors,omitempty"`
 }
 

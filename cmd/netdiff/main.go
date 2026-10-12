@@ -28,6 +28,7 @@ Commands:
   capture <target>        Capture relevant network state for a target (e.g. host:port)
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
+  probe <name> [param]    Execute a bounded validation probe from the catalog
   version                 Display version information
 
 Flags for 'capture':
@@ -40,11 +41,15 @@ Flags for 'compare':
 Flags for 'explain':
   --ai                    Enable Gemini AI reasoning synthesis layer
 
+Flags for 'probe':
+  -t, --target <host:port> Target connection to validate
+
 Examples:
   netdiff capture api.internal.corp:443 -o host-a.ndiff
   netdiff capture api.internal.corp:443 -o host-b.ndiff
   netdiff compare host-a.ndiff host-b.ndiff
   netdiff explain host-a.ndiff host-b.ndiff --ai
+  netdiff probe TEST_TCP_BIND_INTERFACE tun0 -t api.internal.corp:443
 `, version)
 }
 
@@ -70,6 +75,9 @@ func main() {
 
 	case "explain":
 		runExplain(os.Args[2:])
+
+	case "probe":
+		runProbe(os.Args[2:])
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
@@ -237,6 +245,60 @@ func runExplain(args []string) {
 	}
 }
 
+func runProbe(args []string) {
+	fs := flag.NewFlagSet("probe", flag.ExitOnError)
+	targetStr := fs.String("target", "", "Target connection in host:port format")
+	fs.StringVar(targetStr, "t", "", "Target connection in host:port format")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: probe requires a probe name (e.g. netdiff probe TEST_TCP_BIND_INTERFACE tun0 -t api.corp:443)")
+		os.Exit(1)
+	}
+
+	probeName := remaining[0]
+	param := ""
+	if len(remaining) > 1 {
+		param = remaining[1]
+	}
+
+	if *targetStr == "" {
+		fmt.Fprintln(os.Stderr, "Error: missing --target flag (e.g. -t api.internal:443)")
+		os.Exit(1)
+	}
+
+	tgt, err := target.Parse(*targetStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", *targetStr, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Executing validation probe %s(%s) on %s...\n", probeName, param, tgt.Raw)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := probe.ExecuteProbe(ctx, tgt, probeName, param)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Probe execution failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	statusColor := printer.ColorGreen
+	statusSymbol := "✓ SUCCESS"
+	if !result.Success {
+		statusColor = printer.ColorRed
+		statusSymbol = "✗ FAILED"
+	}
+
+	fmt.Printf("\n%s%s=== Probe Result: %s ===%s\n", printer.ColorBold, statusColor, statusSymbol, printer.ColorReset)
+	fmt.Printf("%s\n\n", result.Output)
+}
+
 // reorderArgs moves flag arguments ahead of positional arguments so standard flag.FlagSet can parse them
 func reorderArgs(args []string) []string {
 	var flags []string
@@ -245,7 +307,7 @@ func reorderArgs(args []string) []string {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			if (arg == "-o" || arg == "--output") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}

@@ -57,6 +57,10 @@ func Compare(workingRaw, failingRaw *model.Snapshot) *model.ComparisonReport {
 	neighDiffs := diffNeighbor(working.Neighbor, failing.Neighbor)
 	diffs = append(diffs, neighDiffs...)
 
+	// 7. Firewall Diff
+	fwDiffs := diffFirewall(working.Firewall, failing.Firewall)
+	diffs = append(diffs, fwDiffs...)
+
 	// Score and refine relevance based on the observed TCP symptom and causal graph
 	report.Differences = evaluateRelevance(diffs, working, failing)
 	report.Summary = generateSummary(report)
@@ -310,4 +314,32 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+func diffFirewall(w, f *model.FirewallReport) []model.Difference {
+	var diffs []model.Difference
+	if w == nil || f == nil {
+		return diffs
+	}
+
+	if w.Active != f.Active {
+		wStr := "inactive"
+		if w.Active {
+			wStr = w.Backend
+		}
+		fStr := "inactive"
+		if f.Active {
+			fStr = f.Backend
+		}
+		diffs = append(diffs, model.Difference{
+			Category:       "Firewall",
+			Field:          "filtering_backend",
+			WorkingValue:   wStr,
+			FailingValue:   fStr,
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "Firewall",
+			Rationale:      "Host firewall packet filtering is active on one environment and may drop connection attempts.",
+		})
+	}
+	return diffs
 }
