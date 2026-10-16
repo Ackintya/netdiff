@@ -12,11 +12,12 @@ import (
 	"netdiff/internal/diff"
 	"netdiff/internal/printer"
 	"netdiff/internal/probe"
+	"netdiff/internal/report"
 	"netdiff/internal/snapshot"
 	"netdiff/internal/target"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
 func printUsage() {
 	fmt.Printf(`NetDiff v%s - Explain why a network connection works in one environment and fails in another.
@@ -28,6 +29,7 @@ Commands:
   capture <target>        Capture relevant network state for a target (e.g. host:port)
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
+  report <good> <bad>     Generate markdown incident post-mortem report (for Slack/Jira/GitHub)
   probe <name> [param]    Execute a bounded validation probe from the catalog
   version                 Display version information
 
@@ -40,6 +42,11 @@ Flags for 'compare':
 
 Flags for 'explain':
   --ai                    Enable Gemini AI reasoning synthesis layer
+  --validate              Immediately execute recommended validation probe against target
+
+Flags for 'report':
+  -o, --output <file>     Output report to file instead of stdout
+  --ai                    Enable Gemini AI reasoning synthesis layer
 
 Flags for 'probe':
   -t, --target <host:port> Target connection to validate
@@ -49,6 +56,8 @@ Examples:
   netdiff capture api.internal.corp:443 -o host-b.ndiff
   netdiff compare host-a.ndiff host-b.ndiff
   netdiff explain host-a.ndiff host-b.ndiff --ai
+  netdiff explain host-a.ndiff host-b.ndiff --validate
+  netdiff report host-a.ndiff host-b.ndiff -o incident.md
   netdiff probe TEST_TCP_BIND_INTERFACE tun0 -t api.internal.corp:443
 `, version)
 }
@@ -75,6 +84,9 @@ func main() {
 
 	case "explain":
 		runExplain(os.Args[2:])
+
+	case "report":
+		runReport(os.Args[2:])
 
 	case "probe":
 		runProbe(os.Args[2:])
@@ -174,9 +186,9 @@ func runCompare(args []string) {
 		os.Exit(1)
 	}
 
-	report := diff.Compare(snapA, snapB)
+	comparison := diff.Compare(snapA, snapB)
 	p := printer.New()
-	if err := p.PrintComparison(report, *asJSON, *verbose); err != nil {
+	if err := p.PrintComparison(comparison, *asJSON, *verbose); err != nil {
 		fmt.Fprintf(os.Stderr, "Error rendering comparison: %v\n", err)
 		os.Exit(1)
 	}
@@ -185,6 +197,7 @@ func runCompare(args []string) {
 func runExplain(args []string) {
 	fs := flag.NewFlagSet("explain", flag.ExitOnError)
 	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning layer")
+	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -193,7 +206,7 @@ func runExplain(args []string) {
 
 	files := fs.Args()
 	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: explain requires two snapshot files: netdiff explain <good.ndiff> <bad.ndiff> [--ai]")
+		fmt.Fprintln(os.Stderr, "Error: explain requires two snapshot files: netdiff explain <good.ndiff> <bad.ndiff> [--ai] [--validate]")
 		os.Exit(1)
 	}
 
@@ -209,25 +222,28 @@ func runExplain(args []string) {
 		os.Exit(1)
 	}
 
-	report := diff.Compare(snapA, snapB)
+	comparison := diff.Compare(snapA, snapB)
 
 	// First print baseline diff
 	p := printer.New()
-	_ = p.PrintComparison(report, false, false)
+	_ = p.PrintComparison(comparison, false, false)
 
 	reasoner := ai.NewReasoner()
-	explanation, err := reasoner.Explain(context.Background(), report)
+	explanation, err := reasoner.Explain(context.Background(), comparison, *aiFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating explanation: %v\n", err)
 		os.Exit(1)
 	}
 
 	mode := "Deterministic Diagnostic Engine"
-	if *aiFlag {
+	if explanation.Provider == "gemini" {
 		mode = "Gemini AI Diagnostic Synthesis"
 	}
 
 	fmt.Printf("\n%s%s=== %s ===%s\n", printer.ColorBold, printer.ColorCyan, mode, printer.ColorReset)
+	if explanation.Notice != "" {
+		fmt.Printf("%s%s%s\n\n", printer.ColorYellow, explanation.Notice, printer.ColorReset)
+	}
 	fmt.Printf("%s\n\n", explanation.Summary)
 
 	if len(explanation.Hypotheses) > 0 {
@@ -242,6 +258,85 @@ func runExplain(args []string) {
 		fmt.Printf("%sRecommended Validation Probe:%s\n", printer.ColorBold, printer.ColorReset)
 		fmt.Printf("  Action: %s(%s)\n", explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter)
 		fmt.Printf("  Why:    %s\n\n", explanation.NextBestProbe.Reason)
+	}
+
+	// Active closed-loop validation
+	if *validateFlag && explanation.NextBestProbe != nil {
+		fmt.Printf("%s%s=== Executing Active Validation Probe: %s(%s) ===%s\n",
+			printer.ColorBold, printer.ColorMagenta, explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter, printer.ColorReset)
+		fmt.Printf("Testing against %s...\n", comparison.Target.Raw)
+
+		probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		res, err := probe.ExecuteProbe(probeCtx, comparison.Target, explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter)
+		if err != nil {
+			fmt.Printf("%sValidation probe failed to execute: %v%s\n\n", printer.ColorRed, err, printer.ColorReset)
+			return
+		}
+
+		statusColor := printer.ColorGreen
+		statusSymbol := "✓ VALIDATION SUCCESS"
+		if !res.Success {
+			statusColor = printer.ColorRed
+			statusSymbol = "✗ VALIDATION FAILED"
+		}
+
+		fmt.Printf("\n%s%s=== Probe Result: %s ===%s\n", printer.ColorBold, statusColor, statusSymbol, printer.ColorReset)
+		fmt.Printf("%s\n", res.Output)
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — route/interface bypass establishes connection successfully.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Probe failed; link or upstream hop itself may be down.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	}
+}
+
+func runReport(args []string) {
+	fs := flag.NewFlagSet("report", flag.ExitOnError)
+	outputFile := fs.String("o", "", "Path to output markdown report file")
+	fs.StringVar(outputFile, "output", "", "Path to output markdown report file")
+	aiFlag := fs.Bool("ai", false, "Use Gemini AI reasoning synthesis layer")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	files := fs.Args()
+	if len(files) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: report requires two snapshot files: netdiff report <good.ndiff> <bad.ndiff> [-o report.md] [--ai]")
+		os.Exit(1)
+	}
+
+	snapA, err := snapshot.Load(files[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+		os.Exit(1)
+	}
+
+	snapB, err := snapshot.Load(files[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
+		os.Exit(1)
+	}
+
+	comparison := diff.Compare(snapA, snapB)
+	reasoner := ai.NewReasoner()
+	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
+
+	md := report.GenerateMarkdown(comparison, explanation)
+
+	if *outputFile != "" {
+		if err := os.WriteFile(*outputFile, []byte(md), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing report file: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Saved incident report to %s\n", *outputFile)
+	} else {
+		fmt.Print(md)
 	}
 }
 

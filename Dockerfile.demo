@@ -1,0 +1,12 @@
+FROM golang:1.22-alpine
+
+# Install bash, iproute2 (ip netns, ip route, ip rule), iptables, and python3 for mock server
+RUN apk add --no-cache bash iproute2 iptables python3 curl
+
+WORKDIR /workspace
+
+COPY . .
+
+RUN go build -o /usr/local/bin/netdiff ./cmd/netdiff
+
+CMD ["bash", "scripts/demo_setup.sh"]

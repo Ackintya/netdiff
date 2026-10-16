@@ -1,0 +1,10 @@
+services:
+  demo:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo
+    cap_add:
+      - NET_ADMIN
+    privileged: true
+    volumes:
+      - .:/workspace

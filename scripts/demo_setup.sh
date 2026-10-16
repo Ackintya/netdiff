@@ -19,6 +19,12 @@ BAD_NS="ndiff-bad"
 TARGET_IP="10.40.8.21"
 TARGET_PORT="8080"
 
+# Build netdiff binary if not present
+if [ ! -f "./netdiff" ]; then
+  echo "Compiling netdiff binary..."
+  go build -o ./netdiff ./cmd/netdiff
+fi
+
 # Cleanup any previous runs
 cleanup() {
   echo "Cleaning up network namespaces..."
@@ -93,5 +99,12 @@ echo " NetDiff Diagnostic Explanation & Next-Best Probe"
 echo "=========================================================="
 ./netdiff explain /tmp/good.ndiff /tmp/bad.ndiff
 
+echo ""
+echo "=========================================================="
+echo " NetDiff Automated Markdown Incident Report"
+echo "=========================================================="
+./netdiff report /tmp/good.ndiff /tmp/bad.ndiff
+
 kill $SERVER_PID 2>/dev/null || true
+echo ""
 echo "Demo completed successfully!"
