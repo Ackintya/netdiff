@@ -181,6 +181,7 @@ Collector      Collector        Probe
 | `netdiff explain <good> <bad> [--ai]` | Synthesizes hypotheses and recommends next validation probe |
 | `netdiff explain <good> <bad> --validate` | Automatically executes recommended validation probe |
 | `netdiff report <good> <bad> [-o file.md]` | Generates structured Markdown incident post-mortem |
+| `netdiff ui <good> <bad> [-p 8080]` | Launches interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff probe <name> [param] -t <target>` | Executes a bounded validation probe from the catalog |
 
 ---

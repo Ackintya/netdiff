@@ -15,9 +15,10 @@ import (
 	"netdiff/internal/report"
 	"netdiff/internal/snapshot"
 	"netdiff/internal/target"
+	"netdiff/internal/ui"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 func printUsage() {
 	fmt.Printf(`NetDiff v%s - Explain why a network connection works in one environment and fails in another.
@@ -30,6 +31,7 @@ Commands:
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
   report <good> <bad>     Generate markdown incident post-mortem report (for Slack/Jira/GitHub)
+  ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
   version                 Display version information
 
@@ -48,6 +50,11 @@ Flags for 'report':
   -o, --output <file>     Output report to file instead of stdout
   --ai                    Enable Gemini AI reasoning synthesis layer
 
+Flags for 'ui':
+  -p, --port <port>       Local HTTP port to serve UI on (default: 8080)
+  --no-browser            Do not automatically open default web browser
+  --ai                    Enable Gemini AI reasoning synthesis in UI
+
 Flags for 'probe':
   -t, --target <host:port> Target connection to validate
 
@@ -58,6 +65,7 @@ Examples:
   netdiff explain host-a.ndiff host-b.ndiff --ai
   netdiff explain host-a.ndiff host-b.ndiff --validate
   netdiff report host-a.ndiff host-b.ndiff -o incident.md
+  netdiff ui host-a.ndiff host-b.ndiff -p 8080
   netdiff probe TEST_TCP_BIND_INTERFACE tun0 -t api.internal.corp:443
 `, version)
 }
@@ -87,6 +95,9 @@ func main() {
 
 	case "report":
 		runReport(os.Args[2:])
+
+	case "ui":
+		runUI(os.Args[2:])
 
 	case "probe":
 		runProbe(os.Args[2:])
@@ -340,6 +351,46 @@ func runReport(args []string) {
 	}
 }
 
+func runUI(args []string) {
+	fs := flag.NewFlagSet("ui", flag.ExitOnError)
+	port := fs.Int("p", 8080, "Local HTTP port to serve UI on")
+	fs.IntVar(port, "port", 8080, "Local HTTP port to serve UI on")
+	noBrowser := fs.Bool("no-browser", false, "Do not automatically launch web browser")
+	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis in UI")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	files := fs.Args()
+	if len(files) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: ui requires two snapshot files: netdiff ui <good.ndiff> <bad.ndiff> [-p 8080] [--no-browser]")
+		os.Exit(1)
+	}
+
+	snapA, err := snapshot.Load(files[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+		os.Exit(1)
+	}
+
+	snapB, err := snapshot.Load(files[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
+		os.Exit(1)
+	}
+
+	comparison := diff.Compare(snapA, snapB)
+	reasoner := ai.NewReasoner()
+	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
+
+	if err := ui.StartServer(comparison, explanation, *port, !*noBrowser); err != nil {
+		fmt.Fprintf(os.Stderr, "UI server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runProbe(args []string) {
 	fs := flag.NewFlagSet("probe", flag.ExitOnError)
 	targetStr := fs.String("target", "", "Target connection in host:port format")
@@ -402,7 +453,7 @@ func reorderArgs(args []string) []string {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}

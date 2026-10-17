@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetDiff - Network Path Causal Visualization</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --bg-panel: rgba(18, 25, 41, 0.75);
+      --bg-card: rgba(24, 34, 56, 0.85);
+      --border: rgba(56, 75, 112, 0.4);
+      --border-glow: rgba(0, 229, 255, 0.35);
+      --text-main: #f0f4fc;
+      --text-muted: #8899b8;
+      --accent-cyan: #00e5ff;
+      --accent-cyan-glow: rgba(0, 229, 255, 0.25);
+      --accent-purple: #7c4dff;
+      --status-green: #00e676;
+      --status-green-glow: rgba(0, 230, 118, 0.2);
+      --status-amber: #ffd600;
+      --status-amber-glow: rgba(255, 214, 0, 0.25);
+      --status-red: #ff1744;
+      --status-red-glow: rgba(255, 23, 68, 0.25);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 229, 255, 0.06) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(124, 77, 255, 0.06) 0%, transparent 40%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+    }
+
+    /* Header */
+    header {
+      background: rgba(12, 17, 29, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 14px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      color: #000;
+      font-size: 12px;
+      font-weight: 800;
+      padding: 4px 8px;
+      border-radius: 6px;
+    }
+
+    .target-pill {
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn:hover {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 14px var(--accent-cyan-glow);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(124, 77, 255, 0.2));
+      border: 1px solid rgba(0, 229, 255, 0.5);
+      color: #fff;
+    }
+
+    /* Container */
+    .app-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Alert Banner */
+    .root-cause-banner {
+      background: linear-gradient(90deg, rgba(255, 214, 0, 0.12), rgba(255, 23, 68, 0.08));
+      border: 1px solid rgba(255, 214, 0, 0.4);
+      border-radius: 12px;
+      padding: 16px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      animation: pulseGlow 3s infinite alternate;
+    }
+
+    @keyframes pulseGlow {
+      0% { border-color: rgba(255, 214, 0, 0.3); box-shadow: 0 0 10px rgba(255, 214, 0, 0.1); }
+      100% { border-color: rgba(255, 214, 0, 0.6); box-shadow: 0 0 20px rgba(255, 214, 0, 0.25); }
+    }
+
+    .rc-title {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      color: var(--status-amber);
+      margin-bottom: 4px;
+    }
+
+    .rc-detail {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: #fff;
+    }
+
+    /* Environment Overview Cards */
+    .environments-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .env-card {
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 22px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .env-card.working {
+      border-top: 3px solid var(--status-green);
+    }
+
+    .env-card.failing {
+      border-top: 3px solid var(--status-red);
+    }
+
+    .env-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+
+    .env-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+
+    .working .env-label { color: var(--status-green); }
+    .failing .env-label { color: var(--status-red); }
+
+    .env-hostname {
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      font-family: var(--font-mono);
+    }
+
+    .status-badge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-badge.success {
+      background: var(--status-green-glow);
+      color: var(--status-green);
+      border: 1px solid rgba(0, 230, 118, 0.4);
+    }
+
+    .status-badge.failure {
+      background: var(--status-red-glow);
+      color: var(--status-red);
+      border: 1px solid rgba(255, 23, 68, 0.4);
+    }
+
+    .env-specs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      font-size: 12px;
+    }
+
+    .spec-item .spec-label {
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+
+    .spec-item .spec-val {
+      font-family: var(--font-mono);
+      font-weight: 500;
+      color: #fff;
+    }
+
+    /* Main Workspace Layout */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+
+    /* DAG Tree Container */
+    .dag-section {
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dag-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      position: relative;
+    }
+
+    .dag-tier {
+      display: grid;
+      grid-template-columns: 1fr 140px 1fr;
+      gap: 16px;
+      align-items: center;
+      position: relative;
+    }
+
+    .dag-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .stage-pill {
+      background: rgba(24, 34, 56, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      width: 100%;
+      text-align: center;
+      z-index: 2;
+    }
+
+    .tier-divergent .stage-pill {
+      border-color: var(--status-amber);
+      color: var(--status-amber);
+      background: rgba(255, 214, 0, 0.08);
+      box-shadow: 0 0 10px var(--status-amber-glow);
+    }
+
+    .tier-earliest .stage-pill {
+      border-color: #ff3d00;
+      color: #ff3d00;
+      background: rgba(255, 61, 0, 0.12);
+      box-shadow: 0 0 14px rgba(255, 61, 0, 0.3);
+    }
+
+    .dag-node {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+
+    .dag-node:hover {
+      border-color: var(--accent-cyan);
+      background: rgba(30, 44, 72, 0.9);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+      transform: translateY(-1px);
+    }
+
+    .dag-node.selected {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 16px var(--accent-cyan-glow);
+      background: rgba(30, 48, 80, 0.95);
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .node-state {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .state-same {
+      background: var(--status-green-glow);
+      color: var(--status-green);
+    }
+
+    .state-diff {
+      background: var(--status-amber-glow);
+      color: var(--status-amber);
+    }
+
+    .state-fail {
+      background: var(--status-red-glow);
+      color: var(--status-red);
+    }
+
+    .node-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #fff;
+      word-break: break-all;
+    }
+
+    .tier-divergent .dag-node.failing-node {
+      border-color: rgba(255, 214, 0, 0.5);
+    }
+
+    .tier-divergent .dag-node.working-node {
+      border-color: rgba(0, 230, 118, 0.5);
+    }
+
+    .tier-earliest .dag-node {
+      border-width: 2px;
+      border-color: var(--status-amber);
+    }
+
+    /* Details & Side Panel */
+    .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .inspector-panel {
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .inspector-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .meta-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .meta-box-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .meta-box-val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: #fff;
+    }
+
+    .hypotheses-panel {
+      background: var(--bg-panel);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .hypothesis-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .hyp-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .hyp-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .hyp-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .badge-strong { background: rgba(0, 230, 118, 0.2); color: var(--status-green); }
+    .badge-moderate { background: rgba(255, 214, 0, 0.2); color: var(--status-amber); }
+    .badge-weak { background: rgba(136, 153, 184, 0.2); color: var(--text-muted); }
+
+    .hyp-rationale {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Probe Recommendation Card */
+    .probe-card {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.1), rgba(124, 77, 255, 0.1));
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      border-radius: 8px;
+      padding: 14px;
+      margin-top: 14px;
+    }
+
+    .probe-action {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      color: var(--accent-cyan);
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .probe-reason {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+
+    .probe-cmd {
+      background: #000;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #00e676;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .probe-cmd:hover {
+      border-color: rgba(0, 230, 118, 0.5);
+    }
+
+    /* Modal / Tooltips */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(0, 230, 118, 0.9);
+      color: #000;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      display: none;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-section">
+      <div class="brand-logo">
+        <span class="logo-badge">NETDIFF</span>
+        <span>Target Analyzer</span>
+      </div>
+      <div id="target-badge" class="target-pill">
+        <span>Target:</span> <strong id="header-target">loading...</strong>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button id="btn-export-md" class="btn btn-primary" onclick="downloadReport()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export Report (.md)
+      </button>
+      <button id="btn-view-json" class="btn" onclick="openRawJSON()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+        View JSON
+      </button>
+    </div>
+  </header>
+
+  <main class="app-container">
+
+    <!-- Earliest Divergence Banner -->
+    <section id="banner-root-cause" class="root-cause-banner">
+      <div>
+        <div class="rc-title">Earliest Path Divergence (Root Cause)</div>
+        <div id="rc-text" class="rc-detail">Analyzing dependency paths...</div>
+      </div>
+      <div class="status-badge failure" id="rc-status-pill">Divergent Node</div>
+    </section>
+
+    <!-- Side-by-Side Host Overview Cards -->
+    <section class="environments-grid">
+      <div class="env-card working" id="card-working">
+        <div class="env-header">
+          <div>
+            <div class="env-label">Working Environment</div>
+            <div id="working-host" class="env-hostname">host-working</div>
+          </div>
+          <div id="working-tcp-badge" class="status-badge success">✓ Connected</div>
+        </div>
+        <div class="env-specs">
+          <div class="spec-item">
+            <div class="spec-label">Route Egress</div>
+            <div id="working-iface" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Source IP</div>
+            <div id="working-source" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Routing Table</div>
+            <div id="working-table" class="spec-val">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="env-card failing" id="card-failing">
+        <div class="env-header">
+          <div>
+            <div class="env-label">Failing Environment</div>
+            <div id="failing-host" class="env-hostname">host-failing</div>
+          </div>
+          <div id="failing-tcp-badge" class="status-badge failure">✗ Timeout</div>
+        </div>
+        <div class="env-specs">
+          <div class="spec-item">
+            <div class="spec-label">Route Egress</div>
+            <div id="failing-iface" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Source IP</div>
+            <div id="failing-source" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Routing Table</div>
+            <div id="failing-table" class="spec-val">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace: Dual Flow Tree + Inspector -->
+    <div class="workspace-grid">
+      <!-- DAG Flow Column -->
+      <section class="dag-section">
+        <div class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Dual Dependency Path Visualizer
+        </div>
+        <div id="dag-container" class="dag-flow">
+          <!-- Populated dynamically via JavaScript -->
+        </div>
+      </section>
+
+      <!-- Sidebar: Inspector + AI Hypotheses -->
+      <aside class="sidebar-section">
+        <!-- Node Inspector -->
+        <div class="inspector-panel" id="inspector">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Component Inspector
+          </div>
+          <div id="inspector-content">
+            <p style="color: var(--text-muted); font-size: 13px;">Click any stage node in the dependency graph to inspect path attributes and causal relevance.</p>
+          </div>
+        </div>
+
+        <!-- Diagnostic Hypotheses & Probe -->
+        <div class="hypotheses-panel">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--status-amber)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Diagnostic Reasoning & Follow-up
+          </div>
+          <div id="hypotheses-list">
+            <!-- Hypotheses list populated via JS -->
+          </div>
+
+          <div id="probe-recommendation" class="probe-card" style="display: none;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--accent-cyan); font-weight: 700; margin-bottom: 4px;">Recommended Validation Probe</div>
+            <div id="probe-action" class="probe-action">TEST_TCP_BIND_INTERFACE</div>
+            <div id="probe-reason" class="probe-reason">Reasoning...</div>
+            <div id="probe-cmd" class="probe-cmd" onclick="copyProbeCmd()" title="Click to copy command">
+              <span id="probe-cmd-text">netdiff probe ...</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+  </main>
+
+  <div id="toast" class="toast">Copied probe command to clipboard!</div>
+
+  <script>
+    let appData = null;
+
+    async function loadData() {
+      try {
+        const res = await fetch('/api/data');
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        appData = await res.json();
+        renderDashboard(appData);
+      } catch (err) {
+        console.error("Failed to load data:", err);
+        document.getElementById('rc-text').textContent = "Error loading comparison data: " + err.message;
+      }
+    }
+
+    function renderDashboard(data) {
+      const comp = data.comparison;
+      const exp = data.explanation;
+
+      // Header target
+      document.getElementById('header-target').textContent = comp.target.raw;
+
+      // Root Cause Banner
+      if (comp.earliest_divergence) {
+        document.getElementById('rc-text').textContent = comp.earliest_divergence;
+      } else {
+        document.getElementById('rc-text').textContent = "No upstream path divergence detected.";
+        document.getElementById('rc-status-pill').textContent = "Identical Path";
+        document.getElementById('rc-status-pill').className = "status-badge success";
+      }
+
+      // Environment Cards
+      document.getElementById('working-host').textContent = comp.working_host;
+      document.getElementById('failing-host').textContent = comp.failing_host;
+
+      const wSnap = comp.working_snapshot;
+      const fSnap = comp.failing_snapshot;
+
+      if (wSnap.route) {
+        document.getElementById('working-iface').textContent = wSnap.route.egress_interface || "-";
+        document.getElementById('working-source').textContent = wSnap.route.preferred_source || "-";
+        document.getElementById('working-table').textContent = wSnap.route.table_name || ("table " + wSnap.route.table);
+      }
+      if (wSnap.tcp) {
+        document.getElementById('working-tcp-badge').textContent = `✓ ${wSnap.tcp.status} (${wSnap.tcp.latency_ms}ms)`;
+      }
+
+      if (fSnap.route) {
+        document.getElementById('failing-iface').textContent = fSnap.route.egress_interface || "-";
+        document.getElementById('failing-source').textContent = fSnap.route.preferred_source || "-";
+        document.getElementById('failing-table').textContent = fSnap.route.table_name || ("table " + fSnap.route.table);
+      }
+      if (fSnap.tcp) {
+        document.getElementById('failing-tcp-badge').textContent = `✗ ${fSnap.tcp.status}`;
+      }
+
+      // Render DAG Nodes
+      renderDAG(comp);
+
+      // Render Hypotheses & Probe
+      renderReasoning(exp, comp.target.raw);
+    }
+
+    function renderDAG(comp) {
+      const wSnap = comp.working_snapshot;
+      const fSnap = comp.failing_snapshot;
+      const earliest = comp.earliest_divergence || "";
+
+      const tiers = [
+        {
+          id: "Hostname",
+          label: "Target Host",
+          wVal: comp.target.host,
+          fVal: comp.target.host,
+          same: true,
+          relevance: "IGNORE"
+        },
+        {
+          id: "DNS",
+          label: "DNS Resolution",
+          wVal: formatDNS(wSnap.dns),
+          fVal: formatDNS(fSnap.dns),
+          same: formatDNS(wSnap.dns) === formatDNS(fSnap.dns),
+          relevance: "HIGH"
+        },
+        {
+          id: "Destination IP",
+          label: "Destination IP",
+          wVal: (wSnap.route && wSnap.route.destination_ip) || comp.target.host,
+          fVal: (fSnap.route && fSnap.route.destination_ip) || comp.target.host,
+          same: true,
+          relevance: "HIGH"
+        },
+        {
+          id: "Policy Rule",
+          label: "Policy Routing Rule",
+          wVal: (wSnap.route && wSnap.route.policy_rule) || "default (main)",
+          fVal: (fSnap.route && fSnap.route.policy_rule) || "default (main)",
+          same: ((wSnap.route && wSnap.route.policy_rule) || "") === ((fSnap.route && fSnap.route.policy_rule) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Route Table",
+          label: "Routing Table",
+          wVal: wSnap.route ? `table ${wSnap.route.table} (${wSnap.route.table_name || 'main'})` : "none",
+          fVal: fSnap.route ? `table ${fSnap.route.table} (${fSnap.route.table_name || 'main'})` : "none",
+          same: (wSnap.route && fSnap.route && wSnap.route.table === fSnap.route.table),
+          relevance: "HIGH"
+        },
+        {
+          id: "Gateway",
+          label: "Next-Hop Gateway",
+          wVal: (wSnap.route && wSnap.route.gateway) || "direct on-link",
+          fVal: (fSnap.route && fSnap.route.gateway) || "direct on-link",
+          same: ((wSnap.route && wSnap.route.gateway) || "") === ((fSnap.route && fSnap.route.gateway) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Source Address",
+          label: "Source IP Address",
+          wVal: (wSnap.route && wSnap.route.preferred_source) || "auto",
+          fVal: (fSnap.route && fSnap.route.preferred_source) || "auto",
+          same: ((wSnap.route && wSnap.route.preferred_source) || "") === ((fSnap.route && fSnap.route.preferred_source) || ""),
+          relevance: "MEDIUM"
+        },
+        {
+          id: "Egress Interface",
+          label: "Egress Interface",
+          wVal: (wSnap.route && wSnap.route.egress_interface) || "none",
+          fVal: (fSnap.route && fSnap.route.egress_interface) || "none",
+          same: ((wSnap.route && wSnap.route.egress_interface) || "") === ((fSnap.route && fSnap.route.egress_interface) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "MTU",
+          label: "Interface MTU",
+          wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} bytes` : "1500",
+          fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} bytes` : "1500",
+          same: ((wSnap.interface && wSnap.interface.mtu) || 1500) === ((fSnap.interface && fSnap.interface.mtu) || 1500),
+          relevance: "MEDIUM"
+        },
+        {
+          id: "TCP",
+          label: "TCP Handshake",
+          wVal: wSnap.tcp ? `${wSnap.tcp.status} (${wSnap.tcp.latency_ms}ms)` : "unknown",
+          fVal: fSnap.tcp ? `${fSnap.tcp.status}` : "unknown",
+          same: (wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status),
+          isTCP: true,
+          relevance: "HIGH"
+        }
+      ];
+
+      const container = document.getElementById('dag-container');
+      container.innerHTML = '';
+
+      tiers.forEach(tier => {
+        const isEarliest = earliest.includes(tier.id);
+        const isDivergent = !tier.same;
+
+        let tierClass = "dag-tier";
+        if (isEarliest) tierClass += " tier-earliest";
+        else if (isDivergent) tierClass += " tier-divergent";
+
+        const row = document.createElement('div');
+        row.className = tierClass;
+
+        // Working Node
+        const wNode = document.createElement('div');
+        wNode.className = "dag-node working-node";
+        wNode.innerHTML = `
+          <div class="node-header">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">WORKING</span>
+            <span class="node-state ${tier.same ? 'state-same' : 'state-diff'}">${tier.same ? '✓ MATCH' : '⚠ DIFFERENT'}</span>
+          </div>
+          <div class="node-val">${escapeHtml(tier.wVal)}</div>
+        `;
+        wNode.onclick = () => selectNode(tier);
+
+        // Center Connector
+        const center = document.createElement('div');
+        center.className = "dag-connector";
+        center.innerHTML = `
+          <div class="stage-pill" title="${tier.label}">${escapeHtml(tier.label)}</div>
+          ${isEarliest ? '<div style="font-size: 9px; font-weight: 800; color: var(--status-amber); margin-top: 3px; letter-spacing: 0.5px;">ROOT CAUSE</div>' : ''}
+        `;
+
+        // Failing Node
+        const fNode = document.createElement('div');
+        fNode.className = "dag-node failing-node";
+        const failStatusClass = tier.isTCP ? 'state-fail' : (tier.same ? 'state-same' : 'state-diff');
+        const failStatusLabel = tier.isTCP && !tier.same ? '✗ FAIL' : (tier.same ? '✓ MATCH' : '⚠ DIVERGENT');
+        fNode.innerHTML = `
+          <div class="node-header">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">FAILING</span>
+            <span class="node-state ${failStatusClass}">${failStatusLabel}</span>
+          </div>
+          <div class="node-val">${escapeHtml(tier.fVal)}</div>
+        `;
+        fNode.onclick = () => selectNode(tier);
+
+        row.appendChild(wNode);
+        row.appendChild(center);
+        row.appendChild(fNode);
+
+        container.appendChild(row);
+      });
+
+      // Default select the earliest divergence node or policy rule
+      const initial = tiers.find(t => earliest.includes(t.id)) || tiers[3];
+      selectNode(initial);
+    }
+
+    function selectNode(tier) {
+      document.querySelectorAll('.dag-node').forEach(el => el.classList.remove('selected'));
+
+      const inspector = document.getElementById('inspector-content');
+      inspector.innerHTML = `
+        <div style="font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px;">${escapeHtml(tier.label)}</div>
+        <div style="font-size: 12px; color: ${tier.same ? 'var(--status-green)' : 'var(--status-amber)'}; font-weight: 600; margin-bottom: 14px;">
+          ${tier.same ? '✓ Identical between environments' : '⚠ Path divergence detected at this stage'}
+        </div>
+        <div class="inspector-meta">
+          <div class="meta-box">
+            <div class="meta-box-label">Working Value</div>
+            <div class="meta-box-val">${escapeHtml(tier.wVal)}</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-box-label">Failing Value</div>
+            <div class="meta-box-val">${escapeHtml(tier.fVal)}</div>
+          </div>
+          <div class="meta-box">
+            <div class="meta-box-label">Causal Relevance</div>
+            <div class="meta-box-val" style="color: var(--accent-cyan);">${escapeHtml(tier.relevance || 'HIGH')}</div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderReasoning(exp, targetRaw) {
+      if (!exp) return;
+
+      const hypList = document.getElementById('hypotheses-list');
+      hypList.innerHTML = '';
+
+      if (exp.summary) {
+        const summaryBox = document.createElement('div');
+        summaryBox.style.cssText = "font-size: 13px; line-height: 1.6; color: var(--text-main); margin-bottom: 16px; padding: 12px; background: rgba(0, 229, 255, 0.05); border-left: 3px solid var(--accent-cyan); border-radius: 4px;";
+        summaryBox.textContent = exp.summary;
+        hypList.appendChild(summaryBox);
+      }
+
+      if (exp.hypotheses && exp.hypotheses.length > 0) {
+        exp.hypotheses.forEach(h => {
+          const card = document.createElement('div');
+          card.className = "hypothesis-card";
+          const badgeClass = `badge-${h.support_level}`;
+          card.innerHTML = `
+            <div class="hyp-header">
+              <span class="hyp-title">${escapeHtml(h.title)}</span>
+              <span class="hyp-badge ${badgeClass}">${escapeHtml(h.support_level)}</span>
+            </div>
+            <div class="hyp-rationale">${escapeHtml(h.rationale)}</div>
+          `;
+          hypList.appendChild(card);
+        });
+      }
+
+      if (exp.next_best_probe) {
+        const pCard = document.getElementById('probe-recommendation');
+        pCard.style.display = 'block';
+        document.getElementById('probe-action').textContent = `${exp.next_best_probe.probe_name}(${exp.next_best_probe.parameter || ''})`;
+        document.getElementById('probe-reason').textContent = exp.next_best_probe.reason;
+
+        const cmd = `netdiff probe ${exp.next_best_probe.probe_name} ${exp.next_best_probe.parameter || ''} -t ${targetRaw}`.trim();
+        document.getElementById('probe-cmd-text').textContent = cmd;
+      }
+    }
+
+    function copyProbeCmd() {
+      const text = document.getElementById('probe-cmd-text').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Copied command to clipboard!");
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 2400);
+    }
+
+    function downloadReport() {
+      window.open('/api/report', '_blank');
+    }
+
+    function openRawJSON() {
+      window.open('/api/data', '_blank');
+    }
+
+    function formatDNS(dns) {
+      if (!dns) return "none";
+      if (!dns.success) return "failed (" + (dns.error || "unknown") + ")";
+      if (dns.a_records && dns.a_records.length > 0) return dns.a_records.join(", ");
+      return "resolved";
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    window.addEventListener('DOMContentLoaded', loadData);
+  </script>
+</body>
+</html>
