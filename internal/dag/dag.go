@@ -21,15 +21,16 @@ const (
 	NodeMTU             NodeType = "MTU"
 	NodeNeighbor        NodeType = "Neighbor ARP"
 	NodeTCP             NodeType = "TCP Connection"
+	NodeRouteLookup     NodeType = "Route Lookup"
 )
 
 // Node represents a point in the network dependency chain.
 type Node struct {
-	Type         NodeType `json:"type"`
-	WorkingVal   string   `json:"working_val"`
-	FailingVal   string   `json:"failing_val"`
-	IsDivergent  bool     `json:"is_divergent"`
-	Children     []*Node  `json:"-"`
+	Type        NodeType `json:"type"`
+	WorkingVal  string   `json:"working_val"`
+	FailingVal  string   `json:"failing_val"`
+	IsDivergent bool     `json:"is_divergent"`
+	Children    []*Node  `json:"-"`
 }
 
 // DAG represents the evaluated dependency graph for a target connection.
@@ -97,6 +98,17 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 		IsDivergent: wTable != fTable,
 	}
 
+	// Route lookup outcome
+	wLookup := formatRouteLookup(working.Route)
+	fLookup := formatRouteLookup(failing.Route)
+
+	nLookup := &Node{
+		Type:        NodeRouteLookup,
+		WorkingVal:  wLookup,
+		FailingVal:  fLookup,
+		IsDivergent: wLookup != fLookup,
+	}
+
 	// 6. Gateway
 	wGw := formatGw(working.Route)
 	fGw := formatGw(failing.Route)
@@ -152,12 +164,13 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 	nDNS.Children = []*Node{nDest}
 	nDest.Children = []*Node{nRule}
 	nRule.Children = []*Node{nTable}
-	nTable.Children = []*Node{nGw, nSrc, nIface}
+	nTable.Children = []*Node{nLookup}
+	nLookup.Children = []*Node{nGw, nSrc, nIface}
 	nIface.Children = []*Node{nMTU}
 	nMTU.Children = []*Node{nTCP}
 
 	d.Root = nHostname
-	d.Nodes = []*Node{nHostname, nDNS, nDest, nRule, nTable, nGw, nSrc, nIface, nMTU, nTCP}
+	d.Nodes = []*Node{nHostname, nDNS, nDest, nRule, nTable, nLookup, nGw, nSrc, nIface, nMTU, nTCP}
 
 	// Find the earliest divergent node in order of propagation
 	for _, n := range d.Nodes {
@@ -250,4 +263,20 @@ func formatTCP(t *model.TCPReport) string {
 		return "unknown"
 	}
 	return string(t.Status)
+}
+
+func formatRouteLookup(r *model.RouteReport) string {
+	if r == nil {
+		return "unknown"
+	}
+
+	if r.Success {
+		return "success"
+	}
+
+	if r.Error != "" {
+		return "failed: " + r.Error
+	}
+
+	return "failed"
 }

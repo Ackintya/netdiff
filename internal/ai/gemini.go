@@ -124,6 +124,52 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 	}
 
 	primary := highDiffs[0]
+
+	// Handle route lookup failure before ordinary egress mismatches.
+	// A failed lookup does not identify an alternative interface.
+	if primary.Category == "Route" &&
+		primary.Field == "route_lookup_success" &&
+		report.WorkingSnapshot.Route != nil &&
+		report.FailingSnapshot.Route != nil &&
+		report.WorkingSnapshot.Route.Success &&
+		!report.FailingSnapshot.Route.Success {
+
+		workingRoute := report.WorkingSnapshot.Route
+		failingRoute := report.FailingSnapshot.Route
+
+		result.Summary = fmt.Sprintf(
+			"Route lookup failed in the failing environment for %s. "+
+				"The working environment routed through %s, while the failing "+
+				"environment returned: %s. TCP outcome: %s. "+
+				"The underlying cause has not yet been confirmed.",
+			report.Target.Raw,
+			workingRoute.EgressInterface,
+			failingRoute.Error,
+			fTCP,
+		)
+
+		result.Hypotheses = []DiagnosticHypothesis{
+			{
+				Title:        "Previously Used Interface Is Down or Unavailable",
+				SupportLevel: "moderate",
+				Rationale:    "An unavailable interface can cause its connected route to become unusable. Interface state needs verification.",
+			},
+			{
+				Title:        "Missing or Incorrect Route",
+				SupportLevel: "moderate",
+				Rationale:    "The failing environment has no usable route to the destination. The routing table and policy rules should be inspected.",
+			},
+		}
+
+		result.NextBestProbe = &DiagnosticProbeChoice{
+			ProbeName: "TEST_INTERFACE_STATE",
+			Parameter: workingRoute.EgressInterface,
+			Reason:    "Inspect whether the previously used interface still exists and is UP in the failing environment.",
+		}
+
+		return result, nil
+	}
+
 	switch primary.Category {
 	case "Policy":
 		result.Summary = fmt.Sprintf("Policy routing rule divergence is the primary root cause. The working environment routes target traffic through %s via rule '%s', while the failing environment is missing this policy rule and falls back to %s. Because the failing host routes traffic out %s, the connection encountered %s.",

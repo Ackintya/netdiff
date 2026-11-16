@@ -65,3 +65,47 @@ func TestDAGEarliestDivergenceDNS(t *testing.T) {
 		t.Errorf("expected earliest divergence to be %s, got %s", NodeDNS, d.EarliestDivergence.Type)
 	}
 }
+
+func TestEarliestDivergenceWhenRouteLookupFails(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{
+			Host: "10.10.0.2",
+		},
+		Route: &model.RouteReport{
+			Table:           254,
+			TableName:       "main",
+			EgressInterface: "veth-client",
+			PreferredSource: "10.10.0.1",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{
+			Status: model.TCPStatusConnected,
+		},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route: &model.RouteReport{
+			Table:     254,
+			TableName: "main",
+			Success:   false,
+			Error:     "Network is unreachable",
+		},
+		TCP: &model.TCPReport{
+			Status: model.TCPStatusUnreachable,
+		},
+	}
+
+	graph := BuildDAG(good, bad)
+
+	if graph == nil || graph.EarliestDivergence == nil {
+		t.Fatal("expected earliest divergence")
+	}
+
+	if graph.EarliestDivergence.Type != NodeRouteLookup {
+		t.Fatalf(
+			"expected route lookup divergence, got %s",
+			graph.EarliestDivergence.Type,
+		)
+	}
+}

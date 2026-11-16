@@ -157,6 +157,23 @@ func diffRoute(w, f *model.RouteReport) []model.Difference {
 		return diffs
 	}
 
+	if w.Success != f.Success {
+    		diffs = append(diffs, model.Difference{
+        		Category:       "Route",
+        		Field:          "route_lookup_success",
+        		WorkingValue:   fmt.Sprintf("%t", w.Success),
+			FailingValue:   fmt.Sprintf("%t", f.Success),
+        		Relevance:      model.RelevanceHigh,
+        		DependencyNode: "Route",
+        		Rationale: fmt.Sprintf(
+            			"Route lookup outcome changed. Working: %t; failing: %t. Failure evidence: %s",
+            			w.Success,
+            			f.Success,
+            			f.Error,
+        		),
+    		})
+	}
+
 	if w.PolicyRule != f.PolicyRule && (w.PolicyRule != "" || f.PolicyRule != "") {
 		diffs = append(diffs, model.Difference{
 			Category:       "Policy",

@@ -192,3 +192,47 @@ func TestConnectionRefusedBehavior(t *testing.T) {
 		}
 	}
 }
+
+func TestRouteLookupFailureDivergence(t *testing.T) {
+    good := &model.Snapshot{
+        Target: model.Target{
+            Raw:  "10.10.0.2:8080",
+            Host: "10.10.0.2",
+            Port: 8080,
+        },
+        Route: &model.RouteReport{
+            DestinationIP:   "10.10.0.2",
+            EgressInterface: "veth-client",
+            PreferredSource: "10.10.0.1",
+            Success:         true,
+        },
+        TCP: &model.TCPReport{
+            Status: model.TCPStatusConnected,
+        },
+    }
+
+    bad := &model.Snapshot{
+        Target: good.Target,
+        Route: &model.RouteReport{
+            DestinationIP: "10.10.0.2",
+            Success:       false,
+            Error:         "Network is unreachable",
+        },
+        TCP: &model.TCPReport{
+            Status: model.TCPStatusUnreachable,
+        },
+    }
+
+    report := Compare(good, bad)
+
+    for _, d := range report.Differences {
+        if d.Field == "route_lookup_success" {
+            if d.Relevance != model.RelevanceHigh {
+                t.Fatalf("expected HIGH relevance, got %v", d.Relevance)
+            }
+            return
+        }
+    }
+
+    t.Fatal("expected route_lookup_success difference, but none was found")
+}
