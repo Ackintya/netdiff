@@ -44,6 +44,7 @@ var allowedProbes = map[string]bool{
 	"TEST_DNS_WITH_RESOLVER":  true,
 	"TEST_PROXY_DISABLED":     true,
 	"TEST_DIRECT_IP":          true,
+	"TEST_INTERFACE_STATE":    true,
 }
 
 // Reasoner analyzes the comparison report. If GEMINI_API_KEY is available and requested,
@@ -110,15 +111,37 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 	}
 
 	if len(highDiffs) == 0 {
+		if fTCP == string(model.TCPStatusRefused) {
+			result.Summary = fmt.Sprintf("Both environments share identical network paths to %s. The connection was actively refused (TCP RST) by port %d, confirming complete bidirectional network reachability but indicating the target service is not listening or refusing connections.", report.Target.Raw, report.Target.Port)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "Target Service Down or Port Closed",
+					SupportLevel: "strong",
+					Rationale:    fmt.Sprintf("Destination host responded with TCP RST on port %d. Network routing, ARP, and packet delivery succeeded.", report.Target.Port),
+				},
+				{
+					Title:        "Endpoint Firewall Sending TCP Reset",
+					SupportLevel: "moderate",
+					Rationale:    "A local or endpoint firewall rule configured to REJECT with tcp-reset can mimic a closed port.",
+				},
+			}
+			result.NextBestProbe = &DiagnosticProbeChoice{
+				ProbeName: "TEST_DIRECT_IP",
+				Parameter: report.Target.Host,
+				Reason:    "Validate reachability to the destination IP directly to confirm endpoint host responsiveness.",
+			}
+			return result, nil
+		}
+
 		result.Summary = fmt.Sprintf("Both environments share identical network paths to %s. Observed outcomes (working: %s, failing: %s) suggest an intermittent endpoint failure or application-level drop.", report.Target.Raw, wTCP, fTCP)
 		return result, nil
 	}
 
-	workingIface := "tun0"
+	workingIface := "unspecified"
 	if report.WorkingSnapshot.Route != nil && report.WorkingSnapshot.Route.EgressInterface != "" {
 		workingIface = report.WorkingSnapshot.Route.EgressInterface
 	}
-	failingIface := "eth0"
+	failingIface := "unspecified"
 	if report.FailingSnapshot.Route != nil && report.FailingSnapshot.Route.EgressInterface != "" {
 		failingIface = report.FailingSnapshot.Route.EgressInterface
 	}
@@ -194,27 +217,59 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			Reason:    fmt.Sprintf("Binding TCP socket explicitly to %s on the failing host bypasses policy routing evaluation and tests if the underlying tunnel link is functional.", workingIface),
 		}
 
-	case "Route", "Interface":
-		result.Summary = fmt.Sprintf("Routing divergence is the strongest current explanation. The working environment routes through %s while the failing environment routes through %s. Since the failing connection experienced %s, this divergence directly accounts for the path failure.",
-			workingIface, failingIface, fTCP)
+	case "Interface":
+		result.Summary = fmt.Sprintf("Interface link state divergence is the primary observed difference. Interface %s is %s in the working environment, but %s in the failing environment. TCP outcome: %s.",
+			workingIface, primary.WorkingValue, primary.FailingValue, fTCP)
 
 		result.Hypotheses = []DiagnosticHypothesis{
 			{
-				Title:        "Routing Table / Egress Mismatch",
+				Title:        "Interface Down, Missing, or Disconnected",
 				SupportLevel: "strong",
-				Rationale:    fmt.Sprintf("Traffic in failing environment is routed via %s instead of expected %s interface.", failingIface, workingIface),
+				Rationale:    fmt.Sprintf("The interface required for the egress path is not active on the failing host (%s vs %s).", primary.WorkingValue, primary.FailingValue),
 			},
 			{
-				Title:        "MTU or Path Blackhole",
-				SupportLevel: "weak",
-				Rationale:    "Path MTU issues usually establish TCP handshake before dropping larger data packets.",
+				Title:        "Physical Link or Driver Issue",
+				SupportLevel: "moderate",
+				Rationale:    "Operational state changes can be caused by carrier loss, unplugged cable, or virtual interface teardown.",
+			},
+		}
+
+		probeParam := workingIface
+		if probeParam == "unspecified" && report.WorkingSnapshot.Interface != nil {
+			probeParam = report.WorkingSnapshot.Interface.Name
+		}
+		result.NextBestProbe = &DiagnosticProbeChoice{
+			ProbeName: "TEST_INTERFACE_STATE",
+			Parameter: probeParam,
+			Reason:    fmt.Sprintf("Directly inspect interface administrative flags and operational status for %s.", probeParam),
+		}
+
+	case "Route":
+		if failingIface == "unspecified" {
+			result.Summary = fmt.Sprintf("Routing divergence detected for %s. The working environment routes through %s, while the failing environment has no valid route (%s). TCP outcome: %s.",
+				report.Target.Raw, workingIface, primary.FailingValue, fTCP)
+		} else {
+			result.Summary = fmt.Sprintf("Routing divergence is the strongest candidate explanation. The working environment routes through %s while the failing environment routes through %s. Observed TCP outcome: %s.",
+				workingIface, failingIface, fTCP)
+		}
+
+		result.Hypotheses = []DiagnosticHypothesis{
+			{
+				Title:        "Routing Table or Egress Mismatch",
+				SupportLevel: "strong",
+				Rationale:    fmt.Sprintf("Traffic routing to %s diverges between environments.", report.Target.Raw),
+			},
+			{
+				Title:        "Missing Route or Policy Rule",
+				SupportLevel: "moderate",
+				Rationale:    "A missing subnet route or policy routing rule causes packets to follow default routing or fail lookup.",
 			},
 		}
 
 		result.NextBestProbe = &DiagnosticProbeChoice{
 			ProbeName: "TEST_TCP_BIND_INTERFACE",
 			Parameter: workingIface,
-			Reason:    fmt.Sprintf("Binding TCP socket explicitly to %s on the failing host will verify if reachability succeeds over that link.", workingIface),
+			Reason:    fmt.Sprintf("Binding TCP socket explicitly to %s on the failing host tests whether reachability succeeds over that link.", workingIface),
 		}
 
 	case "DNS":
@@ -223,7 +278,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 
 		result.Hypotheses = []DiagnosticHypothesis{
 			{
-				Title:        "Resolver / Split-Horizon DNS Divergence",
+				Title:        "Resolver or DNS Record Divergence",
 				SupportLevel: "strong",
 				Rationale:    "The destination name is not resolving to the appropriate internal endpoint on the failing host.",
 			},
@@ -237,7 +292,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		result.NextBestProbe = &DiagnosticProbeChoice{
 			ProbeName: "TEST_DNS_WITH_RESOLVER",
 			Parameter: nameservers,
-			Reason:    "Querying the working host's resolver directly tests if the record exists on the internal DNS zone.",
+			Reason:    "Querying the working host's resolver directly tests if the record exists on that DNS zone.",
 		}
 
 	case "Proxy":
@@ -258,14 +313,19 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		}
 
 	case "Firewall":
-		result.Summary = fmt.Sprintf("Firewall filter divergence detected. Active packet dropping rules on the failing environment (%s) prevent traffic to %s, whereas the working host permitted the connection.",
-			primary.FailingValue, report.Target.Raw)
+		result.Summary = fmt.Sprintf("Firewall filter divergence detected. Active packet filtering is present on the failing environment (%s) while TCP connection timed out (working: %s, failing: %s).",
+			primary.FailingValue, wTCP, fTCP)
 
 		result.Hypotheses = []DiagnosticHypothesis{
 			{
-				Title:        "Packet Blocked by Host Firewall (iptables/nftables)",
+				Title:        "Connection Blocked by Host Packet Filtering (iptables/nftables)",
 				SupportLevel: "strong",
-				Rationale:    fmt.Sprintf("Failing host packet filtering dropped TCP SYN packets to %s.", report.Target.Raw),
+				Rationale:    fmt.Sprintf("Host firewall rules are active on the failing host while connection attempts to %s timed out.", report.Target.Raw),
+			},
+			{
+				Title:        "Upstream or Intermediate Firewall Drop",
+				SupportLevel: "moderate",
+				Rationale:    "An intermediate firewall, security group, or network ACL may also be dropping packets.",
 			},
 		}
 
@@ -417,6 +477,7 @@ Your task:
    - TEST_DNS_WITH_RESOLVER (parameter: nameserver IP address)
    - TEST_PROXY_DISABLED (parameter: empty)
    - TEST_DIRECT_IP (parameter: destination IP address)
+   - TEST_INTERFACE_STATE (parameter: interface name like eth0, veth-client)
 
 Return ONLY valid JSON matching this schema:
 {

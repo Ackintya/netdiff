@@ -815,6 +815,14 @@
           relevance: "HIGH"
         },
         {
+          id: "Route Lookup",
+          label: "Route Lookup",
+          wVal: formatRouteLookup(wSnap.route),
+          fVal: formatRouteLookup(fSnap.route),
+          same: formatRouteLookup(wSnap.route) === formatRouteLookup(fSnap.route),
+          relevance: "HIGH"
+        },
+        {
           id: "Gateway",
           label: "Next-Hop Gateway",
           wVal: (wSnap.route && wSnap.route.gateway) || "direct on-link",
@@ -1010,6 +1018,13 @@
       if (!dns.success) return "failed (" + (dns.error || "unknown") + ")";
       if (dns.a_records && dns.a_records.length > 0) return dns.a_records.join(", ");
       return "resolved";
+    }
+
+    function formatRouteLookup(route) {
+      if (!route) return "unknown";
+      if (route.success) return "success";
+      if (route.error) return "failed: " + route.error;
+      return "failed";
     }
 
     function escapeHtml(str) {

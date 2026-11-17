@@ -6,12 +6,12 @@ import (
 
 func TestParse(t *testing.T) {
 	tests := []struct {
-		name       string
-		input      string
-		wantHost   string
-		wantPort   int
-		wantIsIP   bool
-		wantErr    bool
+		name     string
+		input    string
+		wantHost string
+		wantPort int
+		wantIsIP bool
+		wantErr  bool
 	}{
 		{
 			name:     "valid hostname with port",

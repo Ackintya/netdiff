@@ -16,9 +16,11 @@ import (
 	"netdiff/internal/snapshot"
 	"netdiff/internal/target"
 	"netdiff/internal/ui"
+	"netdiff/pkg/model"
+	"netdiff/pkg/version"
 )
 
-const version = "0.3.0"
+var appVersion = version.Version
 
 func printUsage() {
 	fmt.Printf(`NetDiff v%s - Explain why a network connection works in one environment and fails in another.
@@ -66,8 +68,9 @@ Examples:
   netdiff explain host-a.ndiff host-b.ndiff --validate
   netdiff report host-a.ndiff host-b.ndiff -o incident.md
   netdiff ui host-a.ndiff host-b.ndiff -p 8080
+  netdiff probe TEST_INTERFACE_STATE eth0
   netdiff probe TEST_TCP_BIND_INTERFACE tun0 -t api.internal.corp:443
-`, version)
+`, appVersion)
 }
 
 func main() {
@@ -82,7 +85,7 @@ func main() {
 		printUsage()
 
 	case "version", "-v", "--version":
-		fmt.Printf("netdiff version %s\n", version)
+		fmt.Printf("netdiff version %s\n", appVersion)
 
 	case "capture":
 		runCapture(os.Args[2:])
@@ -275,6 +278,8 @@ func runExplain(args []string) {
 	if *validateFlag && explanation.NextBestProbe != nil {
 		fmt.Printf("%s%s=== Executing Active Validation Probe: %s(%s) ===%s\n",
 			printer.ColorBold, printer.ColorMagenta, explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter, printer.ColorReset)
+		fmt.Printf("%s[Notice] Validation probe executes in the current local environment. If snapshots were captured inside a network namespace or remote host, run probe in that environment (e.g. 'ip netns exec <ns> netdiff probe ...').%s\n",
+			printer.ColorYellow, printer.ColorReset)
 		fmt.Printf("Testing against %s...\n", comparison.Target.Raw)
 
 		probeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -295,12 +300,65 @@ func runExplain(args []string) {
 
 		fmt.Printf("\n%s%s=== Probe Result: %s ===%s\n", printer.ColorBold, statusColor, statusSymbol, printer.ColorReset)
 		fmt.Printf("%s\n", res.Output)
+		renderProbeAssessment(explanation.NextBestProbe.ProbeName, res)
+	}
+}
+
+func renderProbeAssessment(probeName string, res *probe.ProbeResult) {
+	switch probeName {
+	case "TEST_INTERFACE_STATE":
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Interface exists and is administratively UP. Route lookup failure is likely due to missing routing table entry or policy rule rather than a disabled interface.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — interface is down or missing in this environment, explaining route lookup failure.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	case "TEST_TCP_BIND_INTERFACE":
 		if res.Success {
 			fmt.Printf("%sAssessment:%s Confirms hypothesis — route/interface bypass establishes connection successfully.\n\n",
 				printer.ColorBold, printer.ColorReset)
 		} else {
 			fmt.Printf("%sAssessment:%s Probe failed; link or upstream hop itself may be down.\n\n",
 				printer.ColorBold, printer.ColorReset)
+		}
+	case "TEST_TCP_BIND_SOURCE":
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — binding to source address succeeds.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Probe failed with bound source address.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	case "TEST_DNS_WITH_RESOLVER":
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — target resolves with specified resolver.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Target name failed to resolve with specified resolver.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	case "TEST_PROXY_DISABLED":
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — direct connection succeeds with proxy disabled.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Direct connection without proxy still failed.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	case "TEST_DIRECT_IP":
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Confirms hypothesis — direct IP connection succeeds; name resolution or routing was the blocker.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Direct IP connection also failed; transport/network layer is blocked.\n\n",
+				printer.ColorBold, printer.ColorReset)
+		}
+	default:
+		if res.Success {
+			fmt.Printf("%sAssessment:%s Probe succeeded.\n\n", printer.ColorBold, printer.ColorReset)
+		} else {
+			fmt.Printf("%sAssessment:%s Probe failed.\n\n", printer.ColorBold, printer.ColorReset)
 		}
 	}
 }
@@ -413,18 +471,26 @@ func runProbe(args []string) {
 		param = remaining[1]
 	}
 
-	if *targetStr == "" {
+	var tgt model.Target
+	if *targetStr != "" {
+		var err error
+		tgt, err = target.Parse(*targetStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", *targetStr, err)
+			os.Exit(1)
+		}
+	} else if probeName == "TEST_INTERFACE_STATE" {
+		tgt = model.Target{Raw: "local", Host: "localhost"}
+	} else {
 		fmt.Fprintln(os.Stderr, "Error: missing --target flag (e.g. -t api.internal:443)")
 		os.Exit(1)
 	}
 
-	tgt, err := target.Parse(*targetStr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", *targetStr, err)
-		os.Exit(1)
+	if tgt.Raw == "local" {
+		fmt.Printf("Executing validation probe %s(%s)...\n", probeName, param)
+	} else {
+		fmt.Printf("Executing validation probe %s(%s) on %s...\n", probeName, param, tgt.Raw)
 	}
-
-	fmt.Printf("Executing validation probe %s(%s) on %s...\n", probeName, param, tgt.Raw)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

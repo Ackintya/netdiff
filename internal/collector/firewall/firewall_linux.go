@@ -36,10 +36,24 @@ func (c *LinuxFirewallCollector) Collect(ctx context.Context) (*model.FirewallRe
 		}
 	}
 
-	// 2. Check iptables via procfs or iptables-legacy
+	// 2. Check iptables rules
+	iptCmd := exec.CommandContext(ctx, "iptables", "-S")
+	var iptOut bytes.Buffer
+	iptCmd.Stdout = &iptOut
+	if err := iptCmd.Run(); err == nil {
+		report.Backend = "iptables"
+		if HasActiveIptablesRules(iptOut.String()) {
+			report.Active = true
+		} else {
+			report.Active = false
+		}
+		return report, nil
+	}
+
+	// Fallback check if procfs tables exist but unprivileged
 	if _, err := os.Stat("/proc/net/ip_tables_names"); err == nil {
 		report.Backend = "iptables"
-		report.Active = true
+		report.Active = false
 		return report, nil
 	}
 

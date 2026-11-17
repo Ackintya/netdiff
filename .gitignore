@@ -1,3 +1,25 @@
+# NetDiff Binaries
 /netdiff
 /netdiff.exe
+bin/
+*.exe
+
+# Logs & Temporary files
 *.log
+*.tmp
+
+# Generated Snapshots and Lab Artifacts
+*.ndiff
+scripts/lab/output/
+testdata/lab/output/
+artifacts/
+
+# Test coverage
+*.out
+coverage.html
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

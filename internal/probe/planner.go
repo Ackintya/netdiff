@@ -15,11 +15,12 @@ import (
 	"netdiff/internal/collector/rule"
 	"netdiff/internal/collector/tcp"
 	"netdiff/pkg/model"
+	"netdiff/pkg/version"
 )
 
 const (
-	CurrentSchemaVersion = "ndiff/v1"
-	CurrentVersion       = "0.1.0"
+	CurrentSchemaVersion = version.SchemaVersion
+	CurrentVersion       = version.Version
 )
 
 type Engine struct {

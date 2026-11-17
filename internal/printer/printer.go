@@ -12,10 +12,10 @@ import (
 
 // Terminal formatting characters
 const (
-	ColorReset  = "\033[0m"
-	ColorRed    = "\033[31m"
-	ColorGreen  = "\033[32m"
-	ColorYellow = "\033[33m"
+	ColorReset   = "\033[0m"
+	ColorRed     = "\033[31m"
+	ColorGreen   = "\033[32m"
+	ColorYellow  = "\033[33m"
 	ColorCyan    = "\033[36m"
 	ColorMagenta = "\033[35m"
 	ColorBold    = "\033[1m"
@@ -127,7 +127,7 @@ func (p *Printer) PrintComparison(report *model.ComparisonReport, asJSON, verbos
 	}
 
 	if report.EarliestDivergence != "" {
-		fmt.Fprintf(p.Out, "%s%s>>> ROOT CAUSE: EARLIEST PATH DIVERGENCE <<<%s\n", ColorBold, ColorYellow, ColorReset)
+		fmt.Fprintf(p.Out, "%s%s>>> EARLIEST OBSERVED PATH DIVERGENCE <<<%s\n", ColorBold, ColorYellow, ColorReset)
 		fmt.Fprintf(p.Out, "%s%s%s\n\n", ColorBold, report.EarliestDivergence, ColorReset)
 	}
 
@@ -175,6 +175,12 @@ func formatDNS(d *model.DNSReport) string {
 func formatRoute(r *model.RouteReport) string {
 	if r == nil {
 		return "unknown"
+	}
+	if !r.Success {
+		if r.Error != "" {
+			return fmt.Sprintf("FAILED (%s)", r.Error)
+		}
+		return "FAILED"
 	}
 	tbl := r.TableName
 	if tbl == "" {

@@ -194,45 +194,189 @@ func TestConnectionRefusedBehavior(t *testing.T) {
 }
 
 func TestRouteLookupFailureDivergence(t *testing.T) {
-    good := &model.Snapshot{
-        Target: model.Target{
-            Raw:  "10.10.0.2:8080",
-            Host: "10.10.0.2",
-            Port: 8080,
-        },
-        Route: &model.RouteReport{
-            DestinationIP:   "10.10.0.2",
-            EgressInterface: "veth-client",
-            PreferredSource: "10.10.0.1",
-            Success:         true,
-        },
-        TCP: &model.TCPReport{
-            Status: model.TCPStatusConnected,
-        },
-    }
+	good := &model.Snapshot{
+		Target: model.Target{
+			Raw:  "10.10.0.2:8080",
+			Host: "10.10.0.2",
+			Port: 8080,
+		},
+		Route: &model.RouteReport{
+			DestinationIP:   "10.10.0.2",
+			EgressInterface: "veth-client",
+			PreferredSource: "10.10.0.1",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{
+			Status: model.TCPStatusConnected,
+		},
+	}
 
-    bad := &model.Snapshot{
-        Target: good.Target,
-        Route: &model.RouteReport{
-            DestinationIP: "10.10.0.2",
-            Success:       false,
-            Error:         "Network is unreachable",
-        },
-        TCP: &model.TCPReport{
-            Status: model.TCPStatusUnreachable,
-        },
-    }
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route: &model.RouteReport{
+			DestinationIP: "10.10.0.2",
+			Success:       false,
+			Error:         "Network is unreachable",
+		},
+		TCP: &model.TCPReport{
+			Status: model.TCPStatusUnreachable,
+		},
+	}
 
-    report := Compare(good, bad)
+	report := Compare(good, bad)
 
-    for _, d := range report.Differences {
-        if d.Field == "route_lookup_success" {
-            if d.Relevance != model.RelevanceHigh {
-                t.Fatalf("expected HIGH relevance, got %v", d.Relevance)
-            }
-            return
-        }
-    }
+	for _, d := range report.Differences {
+		if d.Field == "route_lookup_success" {
+			if d.Relevance != model.RelevanceHigh {
+				t.Fatalf("expected HIGH relevance, got %v", d.Relevance)
+			}
+			return
+		}
+	}
 
-    t.Fatal("expected route_lookup_success difference, but none was found")
+	t.Fatal("expected route_lookup_success difference, but none was found")
+}
+
+func TestInterfaceStateDivergence(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		Route:  &model.RouteReport{EgressInterface: "veth-client", Success: true},
+		Interface: &model.InterfaceReport{
+			Name:      "veth-client",
+			Flags:     []string{"UP", "BROADCAST", "MULTICAST"},
+			OperState: "up",
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "veth-client", Success: true},
+		Interface: &model.InterfaceReport{
+			Name:      "veth-client",
+			Flags:     []string{"BROADCAST", "MULTICAST"},
+			OperState: "down",
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusFailed},
+	}
+
+	report := Compare(good, bad)
+	var foundAdminDiff, foundOperDiff bool
+	for _, d := range report.Differences {
+		if d.Category == "Interface" && d.Field == "admin_state" && d.Relevance == model.RelevanceHigh {
+			foundAdminDiff = true
+			if d.WorkingValue != "UP" || d.FailingValue != "DOWN" {
+				t.Errorf("unexpected admin values: %s vs %s", d.WorkingValue, d.FailingValue)
+			}
+		}
+		if d.Category == "Interface" && d.Field == "oper_state" && d.Relevance == model.RelevanceHigh {
+			foundOperDiff = true
+		}
+	}
+
+	if !foundAdminDiff {
+		t.Error("expected HIGH relevance admin_state diff")
+	}
+	if !foundOperDiff {
+		t.Error("expected HIGH relevance oper_state diff")
+	}
+}
+
+func TestFirewallDropRelevance(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusConnected},
+		Firewall: &model.FirewallReport{
+			Backend: "none",
+			Active:  false,
+		},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusTimeout},
+		Firewall: &model.FirewallReport{
+			Backend: "iptables",
+			Active:  true,
+		},
+	}
+
+	report := Compare(good, bad)
+	var foundFwHigh bool
+	for _, d := range report.Differences {
+		if d.Category == "Firewall" && d.Relevance == model.RelevanceHigh {
+			foundFwHigh = true
+		}
+	}
+
+	if !foundFwHigh {
+		t.Error("expected Firewall diff to be promoted to HIGH when connection timed out and firewall is active")
+	}
+}
+
+func TestGenerateSummary_NoTCPLeakage(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		Route: &model.RouteReport{
+			EgressInterface: "vpn0",
+			PolicyRule:      "from all to 10.10.0.0/16 lookup 200",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route: &model.RouteReport{
+			EgressInterface: "eth0",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusTimeout},
+	}
+
+	report := Compare(good, bad)
+	// Summary should mention Policy Rule or Egress Interface rationale, NOT tcp diff rationale
+	if report.Summary == "" {
+		t.Fatal("expected non-empty summary")
+	}
+	if report.Differences[0].Category == "TCP" && report.Summary == report.Differences[0].Rationale {
+		t.Errorf("summary improperly matched TCP symptom rationale: %s", report.Summary)
+	}
+}
+
+func TestGenerateSummary_RefusedPort(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusConnected},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusRefused},
+	}
+
+	report := Compare(good, bad)
+	if report.Summary == "" {
+		t.Fatal("expected summary for refused port")
+	}
+	if !containsSubstr(report.Summary, "refused") {
+		t.Errorf("expected summary to mention refused connection, got: %s", report.Summary)
+	}
+}
+
+func containsSubstr(s, sub string) bool {
+	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || (len(s) > 0 && len(sub) > 0 && stringsContains(s, sub)))
+}
+
+func stringsContains(s, substr string) bool {
+	for i := 0; i+len(substr) <= len(s); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }

@@ -33,7 +33,7 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 
 	sb.WriteString("## 2. Root Cause & Earliest Divergence\n\n")
 	if comp.EarliestDivergence != "" {
-		sb.WriteString(fmt.Sprintf("> **Root Cause Identified:** `%s`\n\n", comp.EarliestDivergence))
+		sb.WriteString(fmt.Sprintf("> **Root Cause Identified (Earliest Divergence):** `%s`\n\n", comp.EarliestDivergence))
 		sb.WriteString("The dependency graph determined that this divergence occurred earliest in the network path, propagating downstream into the observed connection failure.\n\n")
 	} else {
 		sb.WriteString("No upstream divergence identified in the dependency graph.\n\n")
@@ -71,12 +71,27 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 		sb.WriteString(fmt.Sprintf("| **Policy Routing Rule** | `%s` | `%s` | %s |\n", wRule, fRule, status))
 	}
 
-	// Routing Table & Gateway
+	// Route Lookup Outcome
 	if comp.WorkingSnapshot.Route != nil && comp.FailingSnapshot.Route != nil {
 		wR := comp.WorkingSnapshot.Route
 		fR := comp.FailingSnapshot.Route
+
+		wLookupStr := formatRouteLookup(wR)
+		fLookupStr := formatRouteLookup(fR)
+		statusLookup := "✓ Same"
+		if wLookupStr != fLookupStr {
+			statusLookup = "⚠ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **Route Lookup** | `%s` | `%s` | %s |\n", wLookupStr, fLookupStr, statusLookup))
+
 		wRouteStr := fmt.Sprintf("%s (table %d)", wR.EgressInterface, wR.Table)
+		if wLookupStr != "success" {
+			wRouteStr = fmt.Sprintf("none (%s)", wLookupStr)
+		}
 		fRouteStr := fmt.Sprintf("%s (table %d)", fR.EgressInterface, fR.Table)
+		if fLookupStr != "success" {
+			fRouteStr = fmt.Sprintf("none (%s)", fLookupStr)
+		}
 		status := "✓ Same"
 		if wRouteStr != fRouteStr {
 			status = "⚠ Divergent"
@@ -108,6 +123,23 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 			}
 			sb.WriteString(fmt.Sprintf("| **Source Address** | `%s` | `%s` | %s |\n", wSrc, fSrc, statusSrc))
 		}
+	}
+
+	// Interface Link State
+	if comp.WorkingSnapshot.Interface != nil || comp.FailingSnapshot.Interface != nil {
+		wIface := "unavailable"
+		if comp.WorkingSnapshot.Interface != nil {
+			wIface = fmt.Sprintf("%s (%s, operstate: %s)", comp.WorkingSnapshot.Interface.Name, strings.Join(comp.WorkingSnapshot.Interface.Flags, "|"), comp.WorkingSnapshot.Interface.OperState)
+		}
+		fIface := "unavailable"
+		if comp.FailingSnapshot.Interface != nil {
+			fIface = fmt.Sprintf("%s (%s, operstate: %s)", comp.FailingSnapshot.Interface.Name, strings.Join(comp.FailingSnapshot.Interface.Flags, "|"), comp.FailingSnapshot.Interface.OperState)
+		}
+		statusIface := "✓ Same"
+		if wIface != fIface {
+			statusIface = "⚠ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **Interface Link** | `%s` | `%s` | %s |\n", wIface, fIface, statusIface))
 	}
 
 	// TCP
@@ -152,7 +184,11 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 		sb.WriteString(fmt.Sprintf("- **Validation Probe:** `%s(%s)`\n", exp.NextBestProbe.ProbeName, exp.NextBestProbe.Parameter))
 		sb.WriteString(fmt.Sprintf("- **Rationale:** %s\n\n", exp.NextBestProbe.Reason))
 		sb.WriteString("To execute this safe diagnostic probe immediately:\n")
-		sb.WriteString(fmt.Sprintf("```bash\nnetdiff probe %s %s -t %s\n```\n\n", exp.NextBestProbe.ProbeName, exp.NextBestProbe.Parameter, comp.Target.Raw))
+		if exp.NextBestProbe.ProbeName == "TEST_INTERFACE_STATE" {
+			sb.WriteString(fmt.Sprintf("```bash\nnetdiff probe %s %s\n```\n\n", exp.NextBestProbe.ProbeName, exp.NextBestProbe.Parameter))
+		} else {
+			sb.WriteString(fmt.Sprintf("```bash\nnetdiff probe %s %s -t %s\n```\n\n", exp.NextBestProbe.ProbeName, exp.NextBestProbe.Parameter, comp.Target.Raw))
+		}
 	}
 
 	return sb.String()
@@ -169,4 +205,20 @@ func formatDNS(dns *model.DNSReport) string {
 		return strings.Join(dns.ARecords, ", ")
 	}
 	return "resolved"
+}
+
+func formatRouteLookup(r *model.RouteReport) string {
+	if r == nil {
+		return "unknown"
+	}
+	if r.Success {
+		return "success"
+	}
+	if r.Error != "" {
+		return "failed: " + r.Error
+	}
+	if r.EgressInterface != "" {
+		return "success"
+	}
+	return "failed"
 }

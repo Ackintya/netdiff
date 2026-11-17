@@ -158,20 +158,20 @@ func diffRoute(w, f *model.RouteReport) []model.Difference {
 	}
 
 	if w.Success != f.Success {
-    		diffs = append(diffs, model.Difference{
-        		Category:       "Route",
-        		Field:          "route_lookup_success",
-        		WorkingValue:   fmt.Sprintf("%t", w.Success),
+		diffs = append(diffs, model.Difference{
+			Category:       "Route",
+			Field:          "route_lookup_success",
+			WorkingValue:   fmt.Sprintf("%t", w.Success),
 			FailingValue:   fmt.Sprintf("%t", f.Success),
-        		Relevance:      model.RelevanceHigh,
-        		DependencyNode: "Route",
-        		Rationale: fmt.Sprintf(
-            			"Route lookup outcome changed. Working: %t; failing: %t. Failure evidence: %s",
-            			w.Success,
-            			f.Success,
-            			f.Error,
-        		),
-    		})
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Route",
+			Rationale: fmt.Sprintf(
+				"Route lookup outcome changed. Working: %t; failing: %t. Failure evidence: %s",
+				w.Success,
+				f.Success,
+				f.Error,
+			),
+		})
 	}
 
 	if w.PolicyRule != f.PolicyRule && (w.PolicyRule != "" || f.PolicyRule != "") {
@@ -239,8 +239,74 @@ func diffRoute(w, f *model.RouteReport) []model.Difference {
 
 func diffInterface(w, f *model.InterfaceReport) []model.Difference {
 	var diffs []model.Difference
-	if w == nil || f == nil {
+	if w == nil && f == nil {
 		return diffs
+	}
+
+	if w != nil && f == nil {
+		diffs = append(diffs, model.Difference{
+			Category:       "Interface",
+			Field:          "interface_collected",
+			WorkingValue:   w.Name,
+			FailingValue:   "not_collected / unavailable",
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "Interface",
+			Rationale:      "Egress interface link details were collected for working environment but unavailable in failing environment (e.g. unrouted).",
+		})
+		return diffs
+	}
+
+	if w == nil && f != nil {
+		return diffs
+	}
+
+	// Interface presence / errors
+	if (w.Error == "") != (f.Error == "") {
+		wVal := "present"
+		if w.Error != "" {
+			wVal = "error: " + w.Error
+		}
+		fVal := "present"
+		if f.Error != "" {
+			fVal = "error: " + f.Error
+		}
+		diffs = append(diffs, model.Difference{
+			Category:       "Interface",
+			Field:          "interface_presence",
+			WorkingValue:   wVal,
+			FailingValue:   fVal,
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Interface",
+			Rationale:      "Interface presence differs between environments.",
+		})
+	}
+
+	// Administrative state (UP flag)
+	wUp := hasFlag(w.Flags, "UP")
+	fUp := hasFlag(f.Flags, "UP")
+	if wUp != fUp {
+		diffs = append(diffs, model.Difference{
+			Category:       "Interface",
+			Field:          "admin_state",
+			WorkingValue:   flagAdminStr(wUp),
+			FailingValue:   flagAdminStr(fUp),
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Interface",
+			Rationale:      fmt.Sprintf("Interface administrative state differs: working is %s while failing is %s.", flagAdminStr(wUp), flagAdminStr(fUp)),
+		})
+	}
+
+	// Operational state
+	if w.OperState != f.OperState && w.OperState != "" && f.OperState != "" {
+		diffs = append(diffs, model.Difference{
+			Category:       "Interface",
+			Field:          "oper_state",
+			WorkingValue:   w.OperState,
+			FailingValue:   f.OperState,
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Interface",
+			Rationale:      fmt.Sprintf("Interface operational state differs: working is %s while failing is %s.", w.OperState, f.OperState),
+		})
 	}
 
 	if w.Role != f.Role && w.Role != "" && f.Role != "" {
@@ -270,6 +336,22 @@ func diffInterface(w, f *model.InterfaceReport) []model.Difference {
 	return diffs
 }
 
+func hasFlag(flags []string, target string) bool {
+	for _, f := range flags {
+		if strings.EqualFold(f, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func flagAdminStr(up bool) string {
+	if up {
+		return "UP"
+	}
+	return "DOWN"
+}
+
 func diffNeighbor(w, f *model.NeighborReport) []model.Difference {
 	var diffs []model.Difference
 	if w == nil || f == nil {
@@ -292,17 +374,30 @@ func diffNeighbor(w, f *model.NeighborReport) []model.Difference {
 }
 
 func evaluateRelevance(diffs []model.Difference, working, failing *model.Snapshot) []model.Difference {
-	// If TCP failed with Connection Refused, route/VPN are working, service is down
 	isRefused := failing.TCP != nil && failing.TCP.Status == model.TCPStatusRefused
+	isTimeout := failing.TCP != nil && failing.TCP.Status == model.TCPStatusTimeout
+	routeLookupFailed := failing.Route != nil && !failing.Route.Success
 
 	for i := range diffs {
 		d := &diffs[i]
+
+		// When connection is refused, the network reached the remote host
 		if isRefused && d.Category != "TCP" {
-			// When connection is refused, the network reached the remote host
 			if d.Relevance == model.RelevanceHigh {
 				d.Relevance = model.RelevanceMedium
 				d.Rationale += " Note: Connection was actively refused, confirming path reachability."
 			}
+		}
+
+		// When route lookup failed, downstream source address and interface differences are downstream consequences
+		if routeLookupFailed && (d.Field == "source_address" || d.Field == "egress_interface") {
+			d.Relevance = model.RelevanceMedium
+		}
+
+		// When TCP timed out and failing environment has active firewall filtering, promote firewall
+		if isTimeout && d.Category == "Firewall" && failing.Firewall != nil && failing.Firewall.Active {
+			d.Relevance = model.RelevanceHigh
+			d.Rationale = "Host packet filtering (iptables/nftables) is active while connection timed out, suggesting packets may be silently dropped."
 		}
 	}
 
@@ -310,18 +405,36 @@ func evaluateRelevance(diffs []model.Difference, working, failing *model.Snapsho
 }
 
 func generateSummary(r *model.ComparisonReport) string {
-	var highDiffs []string
+	var highPathDiffs []model.Difference
+	var tcpDiff *model.Difference
+
 	for _, d := range r.Differences {
-		if d.Relevance == model.RelevanceHigh && d.Category != "TCP" {
-			highDiffs = append(highDiffs, fmt.Sprintf("%s (%s != %s)", d.Field, d.WorkingValue, d.FailingValue))
+		if d.Category == "TCP" {
+			tcpDiff = &d
+			continue
+		}
+		if d.Relevance == model.RelevanceHigh {
+			highPathDiffs = append(highPathDiffs, d)
 		}
 	}
 
-	if len(highDiffs) == 0 {
+	if len(highPathDiffs) == 0 {
+		if tcpDiff != nil && r.FailingSnapshot.TCP != nil && r.FailingSnapshot.TCP.Status == model.TCPStatusRefused {
+			return fmt.Sprintf("Network path to %s is fully reachable, but connection was actively refused by the destination host (port %d closed or service not listening).", r.Target.Raw, r.Target.Port)
+		}
+		if tcpDiff != nil {
+			return fmt.Sprintf("No high-relevance network path divergence detected. %s", tcpDiff.Rationale)
+		}
 		return "No high-relevance path differences detected between environments."
 	}
 
-	return fmt.Sprintf("Primary divergence detected in: %s. %s", strings.Join(highDiffs, ", "), r.Differences[0].Rationale)
+	var highNames []string
+	for _, d := range highPathDiffs {
+		highNames = append(highNames, fmt.Sprintf("%s (%s != %s)", d.Field, d.WorkingValue, d.FailingValue))
+	}
+
+	primary := highPathDiffs[0]
+	return fmt.Sprintf("Primary divergence detected in: %s. %s", strings.Join(highNames, ", "), primary.Rationale)
 }
 
 func firstNonEmpty(vals ...string) string {

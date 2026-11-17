@@ -26,7 +26,7 @@ var assetsFS embed.FS
 // Payload represents the JSON payload served by /api/data.
 type Payload struct {
 	Comparison  *model.ComparisonReport `json:"comparison"`
-	Explanation *ai.ExplanationReport  `json:"explanation"`
+	Explanation *ai.ExplanationReport   `json:"explanation"`
 }
 
 // StartServer starts the local web server and serves the visual DAG comparison interface.

@@ -3,9 +3,9 @@
 package probe
 
 import (
+	"golang.org/x/sys/unix"
 	"net"
 	"syscall"
-	"golang.org/x/sys/unix"
 )
 
 func setInterfaceControl(dialer *net.Dialer, ifaceName string) {

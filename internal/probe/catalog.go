@@ -13,12 +13,23 @@ import (
 
 // ProbeResult contains the diagnostic output of a follow-up validation test.
 type ProbeResult struct {
-	ProbeName string          `json:"probe_name"`
-	Target    string          `json:"target"`
-	Parameter string          `json:"parameter,omitempty"`
-	Success   bool            `json:"success"`
-	Output    string          `json:"output"`
-	TCPReport *model.TCPReport `json:"tcp_report,omitempty"`
+	ProbeName      string                `json:"probe_name"`
+	Target         string                `json:"target"`
+	Parameter      string                `json:"parameter,omitempty"`
+	Success        bool                  `json:"success"`
+	Output         string                `json:"output"`
+	TCPReport      *model.TCPReport      `json:"tcp_report,omitempty"`
+	InterfaceState *InterfaceStateResult `json:"interface_state,omitempty"`
+}
+
+// InterfaceStateResult contains structured data for interface state inspection.
+type InterfaceStateResult struct {
+	Name      string   `json:"name"`
+	Exists    bool     `json:"exists"`
+	AdminUp   bool     `json:"admin_up"`
+	OperState string   `json:"oper_state"`
+	Flags     []string `json:"flags,omitempty"`
+	Addresses []string `json:"addresses,omitempty"`
 }
 
 // ExecuteProbe executes a bounded diagnostic validation probe from the fixed catalog.
@@ -45,8 +56,11 @@ func ExecuteProbe(ctx context.Context, target model.Target, probeName, param str
 	case "TEST_DIRECT_IP":
 		return executeDirectIP(ctx, target, param, result)
 
+	case "TEST_INTERFACE_STATE":
+		return executeInterfaceState(ctx, target, param, result)
+
 	default:
-		return nil, fmt.Errorf("unknown probe %q; supported probes: TEST_TCP_BIND_INTERFACE, TEST_TCP_BIND_SOURCE, TEST_DNS_WITH_RESOLVER, TEST_PROXY_DISABLED, TEST_DIRECT_IP", probeName)
+		return nil, fmt.Errorf("unknown probe %q; supported probes: TEST_TCP_BIND_INTERFACE, TEST_TCP_BIND_SOURCE, TEST_DNS_WITH_RESOLVER, TEST_PROXY_DISABLED, TEST_DIRECT_IP, TEST_INTERFACE_STATE", probeName)
 	}
 }
 
@@ -221,4 +235,79 @@ func executeDirectIP(ctx context.Context, target model.Target, directIP string, 
 func hasPort(s string) bool {
 	_, _, err := net.SplitHostPort(s)
 	return err == nil
+}
+
+func executeInterfaceState(ctx context.Context, target model.Target, ifaceName string, res *ProbeResult) (*ProbeResult, error) {
+	if ifaceName == "" {
+		return nil, fmt.Errorf("interface name parameter is required for TEST_INTERFACE_STATE")
+	}
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	netIface, err := net.InterfaceByName(ifaceName)
+	if err != nil {
+		res.Success = false
+		res.Output = fmt.Sprintf("Interface %q does not exist in local namespace/host (%v)", ifaceName, err)
+		res.InterfaceState = &InterfaceStateResult{
+			Name:      ifaceName,
+			Exists:    false,
+			AdminUp:   false,
+			OperState: "missing",
+		}
+		return res, nil
+	}
+
+	adminUp := (netIface.Flags & net.FlagUp) != 0
+	operState := getInterfaceOperState(ifaceName)
+
+	var flagStrs []string
+	if netIface.Flags&net.FlagUp != 0 {
+		flagStrs = append(flagStrs, "UP")
+	}
+	if netIface.Flags&net.FlagBroadcast != 0 {
+		flagStrs = append(flagStrs, "BROADCAST")
+	}
+	if netIface.Flags&net.FlagLoopback != 0 {
+		flagStrs = append(flagStrs, "LOOPBACK")
+	}
+	if netIface.Flags&net.FlagPointToPoint != 0 {
+		flagStrs = append(flagStrs, "POINTOPOINT")
+	}
+	if netIface.Flags&net.FlagMulticast != 0 {
+		flagStrs = append(flagStrs, "MULTICAST")
+	}
+
+	var addrs []string
+	if ifAddrs, err := netIface.Addrs(); err == nil {
+		for _, a := range ifAddrs {
+			addrs = append(addrs, a.String())
+		}
+	}
+
+	res.InterfaceState = &InterfaceStateResult{
+		Name:      netIface.Name,
+		Exists:    true,
+		AdminUp:   adminUp,
+		OperState: operState,
+		Flags:     flagStrs,
+		Addresses: addrs,
+	}
+
+	if !adminUp {
+		res.Success = false
+		res.Output = fmt.Sprintf("Interface %q exists but is administratively DOWN (flags: %v, operstate: %s)", ifaceName, flagStrs, operState)
+		return res, nil
+	}
+
+	res.Success = true
+	if operState != "" && operState != "up" && operState != "unknown" {
+		res.Output = fmt.Sprintf("Interface %q is administratively UP (flags: %v), but operational state is %s", ifaceName, flagStrs, operState)
+	} else {
+		res.Output = fmt.Sprintf("Interface %q exists and is administratively UP (flags: %v, operstate: %s)", ifaceName, flagStrs, operState)
+	}
+	return res, nil
 }
