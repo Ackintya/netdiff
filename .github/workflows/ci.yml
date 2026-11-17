@@ -36,4 +36,6 @@ jobs:
         run: go test -v -race ./...
 
       - name: Run privileged Linux network laboratory
-        run: sudo ./scripts/lab/lab.sh run-all
+        run: |
+          chmod +x ./scripts/lab/*.sh ./scripts/*.sh 2>/dev/null || true
+          sudo bash ./scripts/lab/lab.sh run-all
