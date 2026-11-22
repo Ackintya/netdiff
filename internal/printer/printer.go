@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"netdiff/internal/ai"
 	"netdiff/pkg/model"
 )
 
@@ -19,6 +20,7 @@ const (
 	ColorCyan    = "\033[36m"
 	ColorMagenta = "\033[35m"
 	ColorBold    = "\033[1m"
+	ColorMuted   = "\033[2m"
 )
 
 type Printer struct {
@@ -150,6 +152,428 @@ func (p *Printer) PrintComparison(report *model.ComparisonReport, asJSON, verbos
 	}
 
 	return nil
+}
+
+func isInterfaceUp(iface *model.InterfaceReport) bool {
+	if iface == nil {
+		return false
+	}
+	for _, f := range iface.Flags {
+		if strings.ToUpper(f) == "UP" {
+			return true
+		}
+	}
+	return strings.ToLower(iface.OperState) == "up"
+}
+
+// PrintCapturePath renders a layered network path card for a single capture snapshot.
+func (p *Printer) PrintCapturePath(snap *model.Snapshot) {
+	if snap == nil {
+		fmt.Fprintln(p.Out, "No snapshot data to display.")
+		return
+	}
+
+	host := "localhost"
+	if snap.Metadata.Hostname != "" {
+		host = snap.Metadata.Hostname
+	}
+	timestamp := "unknown time"
+	if !snap.Metadata.CapturedAt.IsZero() {
+		timestamp = snap.Metadata.CapturedAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+
+	fmt.Fprintf(p.Out, "\n  ┌──────────────────────────────────────────────────────────────────────┐\n")
+	fmt.Fprintf(p.Out, "  │  %-68s│\n", fmt.Sprintf("Captured: %s", snap.Target.Raw))
+	fmt.Fprintf(p.Out, "  │  %-68s│\n", fmt.Sprintf("Host: %s  @  %s", host, timestamp))
+	fmt.Fprintf(p.Out, "  └──────────────────────────────────────────────────────────────────────┘\n\n")
+
+	// DNS Layer
+	if snap.DNS == nil {
+		if snap.Target.IsIP {
+			p.printPathRow("DNS", ColorGreen, "●", "(IP target — resolution skipped)")
+		} else {
+			p.printPathRow("DNS", ColorMuted, "●", "not collected")
+		}
+	} else if !snap.DNS.Success {
+		p.printPathRow("DNS", ColorRed, "✗", fmt.Sprintf("resolution failed: %s", snap.DNS.Error))
+	} else {
+		var records []string
+		records = append(records, snap.DNS.ARecords...)
+		records = append(records, snap.DNS.AAAARecords...)
+		recStr := strings.Join(records, ", ")
+		if recStr == "" {
+			recStr = "resolved"
+		}
+		p.printPathRow("DNS", ColorGreen, "●", fmt.Sprintf("✓ %s  (%dms)", recStr, snap.DNS.ResolutionMs))
+	}
+
+	// Route Layer
+	if snap.Route == nil {
+		p.printPathRow("Route", ColorMuted, "●", "not collected")
+	} else if !snap.Route.Success {
+		p.printPathRow("Route", ColorRed, "✗", fmt.Sprintf("lookup failed: %s", snap.Route.Error))
+	} else {
+		tbl := snap.Route.TableName
+		if tbl == "" && snap.Route.Table != 0 {
+			tbl = fmt.Sprintf("tbl %d", snap.Route.Table)
+		}
+		if tbl == "" {
+			tbl = "main"
+		}
+		gw := ""
+		if snap.Route.Gateway != "" {
+			gw = fmt.Sprintf(" gw %s", snap.Route.Gateway)
+		}
+		src := snap.Route.PreferredSource
+		if src == "" {
+			src = "auto"
+		}
+		detail := fmt.Sprintf("→ %s  dev %s%s  src %s  (%s)", snap.Target.Host, snap.Route.EgressInterface, gw, src, tbl)
+		p.printPathRow("Route", ColorGreen, "●", detail)
+	}
+
+	// Interface Layer
+	if snap.Interface != nil && snap.Interface.Name != "" {
+		if isInterfaceUp(snap.Interface) {
+			flags := strings.Join(snap.Interface.Flags, " ")
+			oper := snap.Interface.OperState
+			if oper == "" {
+				oper = "up"
+			}
+			detail := fmt.Sprintf("→ %s  %s  MTU %d  operstate %s", snap.Interface.Name, flags, snap.Interface.MTU, oper)
+			p.printPathRow("Interface", ColorGreen, "●", detail)
+		} else {
+			detail := fmt.Sprintf("✗ %s is administratively DOWN", snap.Interface.Name)
+			p.printPathRow("Interface", ColorRed, "✗", detail)
+		}
+	}
+
+	// ARP / Neighbor Layer
+	if snap.Neighbor != nil && snap.Neighbor.IP != "" {
+		state := snap.Neighbor.State
+		if state == "" {
+			state = "REACHABLE"
+		}
+		detail := fmt.Sprintf("→ %s  %s  %s", snap.Neighbor.IP, snap.Neighbor.MAC, state)
+		p.printPathRow("ARP", ColorGreen, "●", detail)
+	}
+
+	// Firewall Layer
+	if snap.Firewall != nil && snap.Firewall.Active {
+		backend := snap.Firewall.Backend
+		if backend == "" {
+			backend = "packet filter"
+		}
+		p.printPathRow("Firewall", ColorYellow, "⚠", fmt.Sprintf("active filtering detected (%s)", backend))
+	}
+
+	// Proxy Layer
+	if snap.Proxy != nil && (snap.Proxy.HTTPProxy != "" || snap.Proxy.HTTPSProxy != "") {
+		pVal := snap.Proxy.HTTPProxy
+		if pVal == "" {
+			pVal = snap.Proxy.HTTPSProxy
+		}
+		p.printPathRow("Proxy", ColorYellow, "⚠", fmt.Sprintf("proxy configured (%s)", pVal))
+	}
+
+	// TCP Layer
+	if snap.TCP == nil {
+		p.printPathRow("TCP", ColorMuted, "●", "not collected")
+	} else if snap.TCP.Status == model.TCPStatusConnected {
+		remote := snap.Target.Raw
+		if snap.TCP.RemoteIP != "" {
+			remote = fmt.Sprintf("%s:%d", snap.TCP.RemoteIP, snap.TCP.RemotePort)
+		}
+		local := snap.TCP.LocalAddr
+		if local == "" {
+			local = "client"
+		}
+		detail := fmt.Sprintf("✓ connected  %s→%s  (%dms)", local, remote, snap.TCP.LatencyMs)
+		p.printPathRow("TCP", ColorGreen, "●", detail)
+	} else if snap.TCP.Status == model.TCPStatusRefused {
+		p.printPathRow("TCP", ColorRed, "✗", fmt.Sprintf("connection refused on port %d", snap.Target.Port))
+	} else if snap.TCP.Status == model.TCPStatusTimeout {
+		p.printPathRow("TCP", ColorRed, "✗", fmt.Sprintf("connection timed out after %dms", snap.TCP.LatencyMs))
+	} else {
+		errStr := snap.TCP.Error
+		if errStr == "" {
+			errStr = string(snap.TCP.Status)
+		}
+		p.printPathRow("TCP", ColorRed, "✗", fmt.Sprintf("%s (%s)", snap.TCP.Status, errStr))
+	}
+
+	if len(snap.CollectionErrors) > 0 {
+		fmt.Fprintf(p.Out, "\n  %sWarnings:%s\n", ColorYellow, ColorReset)
+		for _, w := range snap.CollectionErrors {
+			fmt.Fprintf(p.Out, "    - %s\n", w)
+		}
+	}
+	fmt.Fprintln(p.Out)
+}
+
+func (p *Printer) printPathRow(label, color, symbol, detail string) {
+	fmt.Fprintf(p.Out, "  %s%s%s %-12s ── %s\n", color, symbol, ColorReset, label, detail)
+}
+
+// PrintDiagnosis renders a rich terminal diagnostic card with confidence bars, root cause, and next probe.
+func (p *Printer) PrintDiagnosis(comp *model.ComparisonReport, exp *ai.ExplanationReport) {
+	if comp == nil || exp == nil {
+		return
+	}
+
+	target := comp.Target.Raw
+	wHost := comp.WorkingHost
+	if wHost == "" {
+		wHost = "baseline"
+	}
+	fHost := comp.FailingHost
+	if fHost == "" {
+		fHost = "current"
+	}
+
+	wTime := ""
+	if comp.WorkingSnapshot != nil && !comp.WorkingSnapshot.Metadata.CapturedAt.IsZero() {
+		wTime = comp.WorkingSnapshot.Metadata.CapturedAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+	fTime := ""
+	if comp.FailingSnapshot != nil && !comp.FailingSnapshot.Metadata.CapturedAt.IsZero() {
+		fTime = comp.FailingSnapshot.Metadata.CapturedAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+
+	fmt.Fprintf(p.Out, "\n  %s╔══════════════════════════════════════════════════════════════════════╗%s\n", ColorCyan, ColorReset)
+	titleText := fmt.Sprintf("NETDIFF DIAGNOSIS  ·  %s", target)
+	fmt.Fprintf(p.Out, "  %s║%s  %-68s%s║%s\n", ColorCyan, ColorBold, titleText, ColorCyan, ColorReset)
+	fmt.Fprintf(p.Out, "  %s╚══════════════════════════════════════════════════════════════════════╝%s\n\n", ColorCyan, ColorReset)
+
+	if wTime != "" {
+		fmt.Fprintf(p.Out, "  %-10s %-16s %s\n", "Baseline", wHost, wTime)
+	}
+	if fTime != "" {
+		fmt.Fprintf(p.Out, "  %-10s %-16s %s\n", "Current", fHost, fTime)
+	}
+	fmt.Fprintln(p.Out)
+
+	p.printPathChain(comp)
+
+	if comp.EarliestDivergence != "" {
+		fmt.Fprintf(p.Out, "  %sROOT CAUSE (DAG earliest divergence):%s\n", ColorBold, ColorReset)
+		fmt.Fprintf(p.Out, "  %s%s%s\n\n", ColorRed, comp.EarliestDivergence, ColorReset)
+	}
+
+	if exp.Notice != "" {
+		fmt.Fprintf(p.Out, "  %s%s%s\n\n", ColorYellow, exp.Notice, ColorReset)
+	}
+
+	if exp.Summary != "" {
+		wrapped := wrapText(exp.Summary, 70, "  ")
+		fmt.Fprintf(p.Out, "  %s\n\n", wrapped)
+	}
+
+	if len(exp.Hypotheses) > 0 {
+		fmt.Fprintf(p.Out, "  %sHYPOTHESES:%s\n\n", ColorBold, ColorReset)
+		for i, h := range exp.Hypotheses {
+			pct := h.ConfidencePct
+			if pct == 0 {
+				switch strings.ToLower(h.SupportLevel) {
+				case "strong":
+					pct = 85
+				case "moderate":
+					pct = 45
+				default:
+					pct = 15
+				}
+			}
+			bar := confidenceBar(pct)
+			lvlColor := ColorGreen
+			if strings.ToLower(h.SupportLevel) == "moderate" {
+				lvlColor = ColorYellow
+			} else if strings.ToLower(h.SupportLevel) == "weak" {
+				lvlColor = ColorMuted
+			}
+
+			fmt.Fprintf(p.Out, "  %d  %s%s%s  %3d%%  [%s%-8s%s]  %s%s%s\n",
+				i+1, ColorCyan, bar, ColorReset, pct, lvlColor, strings.ToUpper(h.SupportLevel), ColorReset, ColorBold, h.Title, ColorReset)
+			if h.Rationale != "" {
+				wrapped := wrapText(h.Rationale, 68, "     ")
+				fmt.Fprintf(p.Out, "     %s\n\n", wrapped)
+			}
+		}
+	}
+
+	if exp.NextBestProbe != nil {
+		fmt.Fprintf(p.Out, "  %sNEXT PROBE:%s\n", ColorBold, ColorReset)
+		probeCmd := fmt.Sprintf("$ netdiff probe %s", exp.NextBestProbe.ProbeName)
+		if exp.NextBestProbe.Parameter != "" {
+			probeCmd += " " + exp.NextBestProbe.Parameter
+		}
+		if exp.NextBestProbe.ProbeName != "TEST_INTERFACE_STATE" && comp.Target.Raw != "" {
+			probeCmd += " -t " + comp.Target.Raw
+		}
+		fmt.Fprintf(p.Out, "  %s%s%s\n", ColorBold+ColorGreen, probeCmd, ColorReset)
+		if exp.NextBestProbe.Reason != "" {
+			fmt.Fprintf(p.Out, "  Why: %s\n", exp.NextBestProbe.Reason)
+		}
+		fmt.Fprintln(p.Out)
+	}
+
+	fmt.Fprintf(p.Out, "  %sDiagnosis provided by: %s%s\n\n", ColorMuted, exp.Provider, ColorReset)
+}
+
+func (p *Printer) printPathChain(comp *model.ComparisonReport) {
+	dnsStatus := "DNS"
+	routeStatus := "Route"
+	ifaceStatus := "Interface"
+	tcpStatus := "TCP"
+
+	f := comp.FailingSnapshot
+	if f != nil {
+		if f.DNS != nil && !f.DNS.Success {
+			dnsStatus = "DNS✗"
+		}
+		if f.Route != nil && !f.Route.Success {
+			routeStatus = "Route✗"
+		}
+		if f.Interface != nil && !isInterfaceUp(f.Interface) {
+			ifaceStatus = "Interface✗"
+		}
+		if f.TCP != nil && f.TCP.Status != model.TCPStatusConnected {
+			tcpStatus = "TCP✗"
+		}
+	}
+
+	for _, d := range comp.Differences {
+		if d.Relevance == model.RelevanceHigh {
+			switch d.Category {
+			case "DNS":
+				dnsStatus = "DNS✗"
+			case "Route", "Policy":
+				routeStatus = "Route✗"
+			case "Interface":
+				ifaceStatus = "Interface✗"
+			case "TCP":
+				tcpStatus = "TCP✗"
+			}
+		}
+	}
+
+	colorize := func(label string) string {
+		if strings.HasSuffix(label, "✗") {
+			return ColorBold + ColorRed + label + ColorReset
+		}
+		return ColorGreen + label + ColorReset
+	}
+
+	fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s\n\n",
+		ColorBold, ColorReset,
+		colorize(dnsStatus),
+		colorize(routeStatus),
+		colorize(ifaceStatus),
+		colorize(tcpStatus),
+	)
+}
+
+// PrintCheck renders a single-line reachability summary.
+func (p *Printer) PrintCheck(snap *model.Snapshot) {
+	if snap == nil {
+		fmt.Fprintf(p.Out, "%s✗%s  unknown (no snapshot)\n", ColorRed, ColorReset)
+		return
+	}
+	tgt := snap.Target.Raw
+
+	if snap.TCP != nil && snap.TCP.Status == model.TCPStatusConnected {
+		egress := "unknown"
+		if snap.Route != nil && snap.Route.EgressInterface != "" {
+			egress = snap.Route.EgressInterface
+		}
+		local := snap.TCP.LocalAddr
+		if local == "" && snap.Route != nil && snap.Route.PreferredSource != "" {
+			local = snap.Route.PreferredSource
+		}
+		if local == "" {
+			local = "client"
+		}
+		remote := snap.Target.Raw
+		if snap.TCP.RemoteIP != "" {
+			remote = fmt.Sprintf("%s:%d", snap.TCP.RemoteIP, snap.TCP.RemotePort)
+		}
+		fmt.Fprintf(p.Out, "%s✓%s  %-22s connected    %s→%s  via %s  (%dms)\n",
+			ColorGreen, ColorReset, tgt, local, remote, egress, snap.TCP.LatencyMs)
+		return
+	}
+
+	if snap.TCP != nil && snap.TCP.Status == model.TCPStatusRefused {
+		fmt.Fprintf(p.Out, "%s✗%s  %-22s refused      (host reachable, port %d closed or service not listening)\n",
+			ColorRed, ColorReset, tgt, snap.Target.Port)
+		return
+	}
+
+	if snap.TCP != nil && snap.TCP.Status == model.TCPStatusTimeout {
+		fmt.Fprintf(p.Out, "%s✗%s  %-22s timeout      (no response, possible firewall drop or silent packet loss)\n",
+			ColorRed, ColorReset, tgt)
+		return
+	}
+
+	if snap.Route != nil && !snap.Route.Success {
+		errStr := snap.Route.Error
+		if errStr == "" {
+			errStr = "Network is unreachable"
+		}
+		fmt.Fprintf(p.Out, "%s✗%s  %-22s unreachable  (route lookup failed: %s)\n",
+			ColorRed, ColorReset, tgt, errStr)
+		return
+	}
+
+	if snap.DNS != nil && !snap.DNS.Success {
+		errStr := snap.DNS.Error
+		if errStr == "" {
+			errStr = "NXDOMAIN"
+		}
+		fmt.Fprintf(p.Out, "%s✗%s  %-22s dns_failed   (%s)\n",
+			ColorRed, ColorReset, tgt, errStr)
+		return
+	}
+
+	status := "failed"
+	reason := "connection failed"
+	if snap.TCP != nil {
+		status = string(snap.TCP.Status)
+		if snap.TCP.Error != "" {
+			reason = snap.TCP.Error
+		}
+	}
+	fmt.Fprintf(p.Out, "%s✗%s  %-22s %-12s (%s)\n",
+		ColorRed, ColorReset, tgt, status, reason)
+}
+
+func confidenceBar(pct int) string {
+	if pct < 0 {
+		pct = 0
+	}
+	if pct > 100 {
+		pct = 100
+	}
+	filled := (pct * 20) / 100
+	empty := 20 - filled
+	return strings.Repeat("█", filled) + strings.Repeat("░", empty)
+}
+
+func wrapText(text string, width int, prefix string) string {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return ""
+	}
+	var lines []string
+	current := words[0]
+	for _, w := range words[1:] {
+		if len(current)+1+len(w) > width {
+			lines = append(lines, current)
+			current = prefix + w
+		} else {
+			current += " " + w
+		}
+	}
+	lines = append(lines, current)
+	return strings.Join(lines, "\n")
 }
 
 func (p *Printer) printSectionHeader(title string) {

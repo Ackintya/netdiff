@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -29,6 +30,8 @@ Usage:
   netdiff <command> [arguments]
 
 Commands:
+  diagnose <target>       Diagnose target connectivity against saved baseline (single-command workflow)
+  check <target>          Fast reachability probe with one-line summary
   capture <target>        Capture relevant network state for a target (e.g. host:port)
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
@@ -36,6 +39,15 @@ Commands:
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
   version                 Display version information
+
+Flags for 'diagnose':
+  -b, --baseline <file>   Use custom baseline .ndiff snapshot (default: ~/.netdiff/baselines/<target>.ndiff)
+  -u, --update            Update/record baseline snapshot with current network state
+  --ai                    Enable Gemini AI reasoning synthesis layer
+  --validate              Immediately execute recommended validation probe against target
+
+Flags for 'check':
+  (none - fast reachability test)
 
 Flags for 'capture':
   -o, --output <file>     Path to output .ndiff snapshot file (default: prints summary)
@@ -61,6 +73,9 @@ Flags for 'probe':
   -t, --target <host:port> Target connection to validate
 
 Examples:
+  netdiff diagnose api.internal.corp:443
+  netdiff diagnose api.internal.corp:443 --validate
+  netdiff check api.internal.corp:443
   netdiff capture api.internal.corp:443 -o host-a.ndiff
   netdiff capture api.internal.corp:443 -o host-b.ndiff
   netdiff compare host-a.ndiff host-b.ndiff
@@ -87,6 +102,12 @@ func main() {
 	case "version", "-v", "--version":
 		fmt.Printf("netdiff version %s\n", appVersion)
 
+	case "diagnose":
+		runDiagnose(os.Args[2:])
+
+	case "check":
+		runCheck(os.Args[2:])
+
 	case "capture":
 		runCapture(os.Args[2:])
 
@@ -108,6 +129,165 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
 		printUsage()
+		os.Exit(1)
+	}
+}
+
+func runDiagnose(args []string) {
+	fs := flag.NewFlagSet("diagnose", flag.ExitOnError)
+	baselineFile := fs.String("b", "", "Custom baseline .ndiff snapshot file")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline .ndiff snapshot file")
+	updateBaseline := fs.Bool("u", false, "Update baseline with current network state")
+	fs.BoolVar(updateBaseline, "update", false, "Update baseline with current network state")
+	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
+	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: diagnose requires a target in 'host:port' format (e.g., netdiff diagnose api.corp:443)")
+		os.Exit(1)
+	}
+
+	tgt, err := target.Parse(remaining[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", remaining[0], err)
+		os.Exit(1)
+	}
+
+	bPath := *baselineFile
+	if bPath == "" {
+		var err error
+		bPath, err = defaultBaselinePath(tgt.Raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error determining baseline path: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	p := printer.New()
+	engine := probe.NewEngine()
+
+	// If updating or baseline does not exist yet: capture baseline
+	_, statErr := os.Stat(bPath)
+	if *updateBaseline || os.IsNotExist(statErr) {
+		fmt.Printf("Capturing baseline network state for %s...\n", tgt.Raw)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		snap, err := engine.Capture(ctx, tgt)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error capturing baseline: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(bPath), 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating baseline directory: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := snapshot.Save(bPath, snap); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving baseline: %v\n", err)
+			os.Exit(1)
+		}
+
+		p.PrintCapturePath(snap)
+		fmt.Printf("✓ Baseline captured and saved to %s\n", bPath)
+		fmt.Printf("To diagnose connection issues in the future, run:\n  netdiff diagnose %s\n\n", tgt.Raw)
+		return
+	}
+
+	// Baseline exists: load baseline, capture current state, compare and explain
+	baseSnap, err := snapshot.Load(bPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("Capturing current network state for %s...\n", tgt.Raw)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	currSnap, err := engine.Capture(ctx, tgt)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error capturing current state: %v\n", err)
+		os.Exit(1)
+	}
+
+	comparison := diff.Compare(baseSnap, currSnap)
+	reasoner := ai.NewReasoner()
+	explanation, err := reasoner.Explain(ctx, comparison, *aiFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating explanation: %v\n", err)
+		os.Exit(1)
+	}
+
+	p.PrintDiagnosis(comparison, explanation)
+
+	// Active validation probe
+	if *validateFlag && explanation.NextBestProbe != nil {
+		fmt.Printf("%s%s=== Executing Active Validation Probe: %s(%s) ===%s\n",
+			printer.ColorBold, printer.ColorMagenta, explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter, printer.ColorReset)
+		fmt.Printf("%s[Notice] Validation probe executes in the current local environment. If snapshots were captured inside a network namespace or remote host, run probe in that environment (e.g. 'ip netns exec <ns> netdiff probe ...').%s\n",
+			printer.ColorYellow, printer.ColorReset)
+		fmt.Printf("Testing against %s...\n", comparison.Target.Raw)
+
+		probeCtx, pCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer pCancel()
+
+		res, err := probe.ExecuteProbe(probeCtx, comparison.Target, explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter)
+		if err != nil {
+			fmt.Printf("%sValidation probe failed to execute: %v%s\n\n", printer.ColorRed, err, printer.ColorReset)
+			return
+		}
+
+		statusColor := printer.ColorGreen
+		statusSymbol := "✓ VALIDATION SUCCESS"
+		if !res.Success {
+			statusColor = printer.ColorRed
+			statusSymbol = "✗ VALIDATION FAILED"
+		}
+
+		fmt.Printf("\n%s%s=== Probe Result: %s ===%s\n", printer.ColorBold, statusColor, statusSymbol, printer.ColorReset)
+		fmt.Printf("%s\n", res.Output)
+		renderProbeAssessment(explanation.NextBestProbe.ProbeName, res)
+	}
+
+	if currSnap.TCP != nil && currSnap.TCP.Status != model.TCPStatusConnected {
+		os.Exit(1)
+	}
+}
+
+func runCheck(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: check requires a target in 'host:port' format (e.g., netdiff check api.corp:443)")
+		os.Exit(1)
+	}
+
+	tgt, err := target.Parse(args[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", args[0], err)
+		os.Exit(1)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	engine := probe.NewEngine()
+	snap, err := engine.Capture(ctx, tgt)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Check failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	p := printer.New()
+	p.PrintCheck(snap)
+
+	if snap.TCP == nil || snap.TCP.Status != model.TCPStatusConnected {
 		os.Exit(1)
 	}
 }
@@ -145,28 +325,15 @@ func runCapture(args []string) {
 		os.Exit(1)
 	}
 
+	p := printer.New()
+	p.PrintCapturePath(snap)
+
 	if *outputFile != "" {
 		if err := snapshot.Save(*outputFile, snap); err != nil {
 			fmt.Fprintf(os.Stderr, "Error saving snapshot: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Printf("✓ Saved snapshot to %s\n", *outputFile)
-	} else {
-		// Output summary
-		fmt.Printf("\n--- Capture Summary ---\n")
-		fmt.Printf("Target:     %s\n", snap.Target.Raw)
-		if snap.DNS != nil {
-			fmt.Printf("DNS:        Success=%v (in %dms)\n", snap.DNS.Success, snap.DNS.ResolutionMs)
-		}
-		if snap.Route != nil {
-			fmt.Printf("Route:      Dev=%s Table=%d Gw=%s Src=%s\n", snap.Route.EgressInterface, snap.Route.Table, snap.Route.Gateway, snap.Route.PreferredSource)
-		}
-		if snap.TCP != nil {
-			fmt.Printf("TCP:        Status=%s Latency=%dms\n", snap.TCP.Status, snap.TCP.LatencyMs)
-		}
-		if len(snap.CollectionErrors) > 0 {
-			fmt.Printf("Warnings:   %v\n", snap.CollectionErrors)
-		}
 	}
 }
 
@@ -238,10 +405,6 @@ func runExplain(args []string) {
 
 	comparison := diff.Compare(snapA, snapB)
 
-	// First print baseline diff
-	p := printer.New()
-	_ = p.PrintComparison(comparison, false, false)
-
 	reasoner := ai.NewReasoner()
 	explanation, err := reasoner.Explain(context.Background(), comparison, *aiFlag)
 	if err != nil {
@@ -249,30 +412,8 @@ func runExplain(args []string) {
 		os.Exit(1)
 	}
 
-	mode := "Deterministic Diagnostic Engine"
-	if explanation.Provider == "gemini" {
-		mode = "Gemini AI Diagnostic Synthesis"
-	}
-
-	fmt.Printf("\n%s%s=== %s ===%s\n", printer.ColorBold, printer.ColorCyan, mode, printer.ColorReset)
-	if explanation.Notice != "" {
-		fmt.Printf("%s%s%s\n\n", printer.ColorYellow, explanation.Notice, printer.ColorReset)
-	}
-	fmt.Printf("%s\n\n", explanation.Summary)
-
-	if len(explanation.Hypotheses) > 0 {
-		fmt.Printf("%sDiagnostic Hypotheses:%s\n", printer.ColorBold, printer.ColorReset)
-		for i, h := range explanation.Hypotheses {
-			fmt.Printf("  %d. %s [%s Support]\n     %s\n", i+1, h.Title, strings.ToUpper(h.SupportLevel), h.Rationale)
-		}
-		fmt.Println()
-	}
-
-	if explanation.NextBestProbe != nil {
-		fmt.Printf("%sRecommended Validation Probe:%s\n", printer.ColorBold, printer.ColorReset)
-		fmt.Printf("  Action: %s(%s)\n", explanation.NextBestProbe.ProbeName, explanation.NextBestProbe.Parameter)
-		fmt.Printf("  Why:    %s\n\n", explanation.NextBestProbe.Reason)
-	}
+	p := printer.New()
+	p.PrintDiagnosis(comparison, explanation)
 
 	// Active closed-loop validation
 	if *validateFlag && explanation.NextBestProbe != nil {
@@ -511,6 +652,36 @@ func runProbe(args []string) {
 	fmt.Printf("%s\n\n", result.Output)
 }
 
+func defaultBaselinePath(targetRaw string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	name := sanitizeTarget(targetRaw)
+	if name == "" {
+		name = "target"
+	}
+	return filepath.Join(home, ".netdiff", "baselines", name+".ndiff"), nil
+}
+
+func sanitizeTarget(raw string) string {
+	s := strings.Map(func(r rune) rune {
+		switch r {
+		case ':', '/', '@', '.', ' ':
+			return '-'
+		default:
+			if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+				return r
+			}
+			return '-'
+		}
+	}, raw)
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	return strings.Trim(s, "-")
+}
+
 // reorderArgs moves flag arguments ahead of positional arguments so standard flag.FlagSet can parse them
 func reorderArgs(args []string) []string {
 	var flags []string
@@ -519,7 +690,7 @@ func reorderArgs(args []string) []string {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port" || arg == "-b" || arg == "--baseline") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}

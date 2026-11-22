@@ -10,6 +10,25 @@ Instead of manually running dozens of disconnected commands (`ip route`, `ip rul
 
 ## Workflow
 
+### Single-Command Diagnosis (Recommended)
+
+Diagnose target connectivity against an automatically managed baseline:
+
+```bash
+# First run records baseline snapshot (when network is working):
+netdiff diagnose 10.10.0.2:8080
+
+# Subsequent run compares against baseline and provides immediate diagnosis:
+netdiff diagnose 10.10.0.2:8080
+
+# Fast reachability check with one-line status:
+netdiff check 10.10.0.2:8080
+```
+
+### Manual Snapshot Workflow
+
+Capture and compare discrete snapshots across hosts or time:
+
 ```bash
 # 1. Capture target network state in the working environment:
 netdiff capture 10.10.0.2:8080 -o good.ndiff
@@ -110,6 +129,8 @@ NetDiff is designed to accurately identify and distinguish between common networ
 
 | Command | Description |
 |---|---|
+| `netdiff diagnose <target> [-b file.ndiff] [-u] [--validate]` | Single-command diagnosis comparing against saved baseline |
+| `netdiff check <target>` | Fast reachability probe with one-line status summary |
 | `netdiff capture <target> [-o file.ndiff]` | Capture target network state to console or `.ndiff` snapshot |
 | `netdiff compare <good> <bad> [-v] [-j]` | Compare two snapshots and highlight causal differences |
 | `netdiff explain <good> <bad> [--ai] [--validate]` | Synthesize diagnostic explanation and recommended validation probe |

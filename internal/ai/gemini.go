@@ -16,9 +16,23 @@ import (
 
 // DiagnosticHypothesis represents a reasoned cause with support level.
 type DiagnosticHypothesis struct {
-	Title        string `json:"title"`
-	SupportLevel string `json:"support_level"` // "strong", "moderate", "weak"
-	Rationale    string `json:"rationale"`
+	Title         string `json:"title"`
+	SupportLevel  string `json:"support_level"`  // "strong", "moderate", "weak"
+	Rationale     string `json:"rationale"`
+	ConfidencePct int    `json:"confidence_pct,omitempty"` // 0-100 visual confidence
+}
+
+func supportToConfidence(level string) int {
+	switch strings.ToLower(level) {
+	case "strong":
+		return 85
+	case "moderate":
+		return 45
+	case "weak":
+		return 15
+	default:
+		return 50
+	}
 }
 
 // DiagnosticProbeChoice is a bounded follow-up test chosen from the safe fixed catalog.
@@ -130,11 +144,11 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 				Parameter: report.Target.Host,
 				Reason:    "Validate reachability to the destination IP directly to confirm endpoint host responsiveness.",
 			}
-			return result, nil
+			return finalizeHypotheses(result), nil
 		}
 
 		result.Summary = fmt.Sprintf("Both environments share identical network paths to %s. Observed outcomes (working: %s, failing: %s) suggest an intermittent endpoint failure or application-level drop.", report.Target.Raw, wTCP, fTCP)
-		return result, nil
+		return finalizeHypotheses(result), nil
 	}
 
 	workingIface := "unspecified"
@@ -190,7 +204,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			Reason:    "Inspect whether the previously used interface still exists and is UP in the failing environment.",
 		}
 
-		return result, nil
+		return finalizeHypotheses(result), nil
 	}
 
 	switch primary.Category {
@@ -354,7 +368,19 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		}
 	}
 
-	return result, nil
+	return finalizeHypotheses(result), nil
+}
+
+func finalizeHypotheses(result *ExplanationReport) *ExplanationReport {
+	if result == nil {
+		return nil
+	}
+	for i := range result.Hypotheses {
+		if result.Hypotheses[i].ConfidencePct == 0 {
+			result.Hypotheses[i].ConfidencePct = supportToConfidence(result.Hypotheses[i].SupportLevel)
+		}
+	}
+	return result
 }
 
 // callGemini issues a structured generateContent call to Google Gemini REST API.
@@ -438,6 +464,8 @@ func (r *Reasoner) callGemini(ctx context.Context, report *model.ComparisonRepor
 			explanation.NextBestProbe.Reason = "Validate connectivity over working interface link."
 		}
 	}
+
+	finalizeHypotheses(&explanation)
 
 	return &explanation, nil
 }

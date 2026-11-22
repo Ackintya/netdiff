@@ -291,3 +291,42 @@ func TestExplain_ConnectionRefusedClosedPort(t *testing.T) {
 		t.Errorf("expected summary to explain service is not listening, got: %s", explanation.Summary)
 	}
 }
+
+func TestConfidenceAssignment(t *testing.T) {
+	reasoner := NewReasoner()
+	report := &model.ComparisonReport{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "veth-client", Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{Success: false, Error: "Network is unreachable"},
+			TCP:   &model.TCPReport{Status: model.TCPStatusUnreachable},
+		},
+		Differences: []model.Difference{
+			{
+				Category:     "Route",
+				Field:        "route_lookup_success",
+				WorkingValue: "true",
+				FailingValue: "false",
+				Relevance:    model.RelevanceHigh,
+			},
+		},
+	}
+
+	explanation, err := reasoner.Explain(context.Background(), report, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(explanation.Hypotheses) == 0 {
+		t.Fatalf("expected hypotheses, got none")
+	}
+
+	for _, h := range explanation.Hypotheses {
+		if h.ConfidencePct <= 0 || h.ConfidencePct > 100 {
+			t.Errorf("hypothesis %q has invalid ConfidencePct %d", h.Title, h.ConfidencePct)
+		}
+	}
+}
