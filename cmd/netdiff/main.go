@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -36,6 +37,7 @@ Commands:
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   graph <good> <bad>      Render terminal ASCII/Unicode causal dependency graph
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
+  ask <good> <bad> "<q>"  Ask natural language debugging questions grounded in snapshot evidence
   report <good> <bad>     Generate incident report in markdown or standalone interactive HTML
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
@@ -67,6 +69,10 @@ Flags for 'explain':
   --ai                    Enable Gemini AI reasoning synthesis layer
   --validate              Immediately execute recommended validation probe against target
 
+Flags for 'ask':
+  -b, --baseline <file>   Use custom baseline .ndiff snapshot (when target is used)
+  -j, --json              Output answer as JSON
+
 Flags for 'report':
   -o, --output <file>     Output report to file instead of stdout
   --html                  Generate standalone interactive HTML report (offline-capable)
@@ -87,8 +93,11 @@ Examples:
   netdiff capture api.internal.corp:443 -o host-a.ndiff
   netdiff capture api.internal.corp:443 -o host-b.ndiff
   netdiff compare host-a.ndiff host-b.ndiff
+  netdiff graph host-a.ndiff host-b.ndiff
   netdiff explain host-a.ndiff host-b.ndiff --ai
   netdiff explain host-a.ndiff host-b.ndiff --validate
+  netdiff ask host-a.ndiff host-b.ndiff "Why is the connection timing out?"
+  netdiff ask api.internal.corp:443 "Is this blocked by firewall or routing?"
   netdiff report host-a.ndiff host-b.ndiff -o incident.md
   netdiff ui host-a.ndiff host-b.ndiff -p 8080
   netdiff probe TEST_INTERFACE_STATE eth0
@@ -127,6 +136,9 @@ func main() {
 
 	case "explain":
 		runExplain(os.Args[2:])
+
+	case "ask":
+		runAsk(os.Args[2:])
 
 	case "report":
 		runReport(os.Args[2:])
@@ -580,6 +592,131 @@ func renderProbeAssessment(probeName string, res *probe.ProbeResult) {
 			fmt.Printf("%sAssessment:%s Probe failed.\n\n", printer.ColorBold, printer.ColorReset)
 		}
 	}
+}
+
+func runAsk(args []string) {
+	fs := flag.NewFlagSet("ask", flag.ExitOnError)
+	baselineFile := fs.String("b", "", "Custom baseline .ndiff snapshot file")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline .ndiff snapshot file")
+	asJSON := fs.Bool("j", false, "Output response as JSON")
+	fs.BoolVar(asJSON, "json", false, "Output response as JSON")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: 'ask' requires either:")
+		fmt.Fprintln(os.Stderr, "  netdiff ask <good.ndiff> <bad.ndiff> \"<question>\"")
+		fmt.Fprintln(os.Stderr, "  netdiff ask <target> \"<question>\"")
+		os.Exit(1)
+	}
+
+	reasoner := ai.NewReasoner()
+	p := printer.New()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
+	if len(remaining) >= 3 {
+		// Two snapshot files + question
+		goodFile := remaining[0]
+		badFile := remaining[1]
+		question := remaining[2]
+
+		snapA, err := snapshot.Load(goodFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", goodFile, err)
+			os.Exit(1)
+		}
+
+		snapB, err := snapshot.Load(badFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", badFile, err)
+			os.Exit(1)
+		}
+
+		comparison := diff.Compare(snapA, snapB)
+		answer, err := reasoner.Ask(ctx, comparison, question)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error answering question: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *asJSON {
+			out := map[string]string{
+				"target":   comparison.Target.Raw,
+				"question": question,
+				"answer":   answer,
+			}
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			_ = enc.Encode(out)
+			return
+		}
+
+		p.PrintAsk(comparison.Target.Raw, question, answer)
+		return
+	}
+
+	// 2 arguments: <target> <question>
+	targetArg := remaining[0]
+	question := remaining[1]
+
+	tgt, err := target.Parse(targetArg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", targetArg, err)
+		os.Exit(1)
+	}
+
+	bPath := *baselineFile
+	if bPath == "" {
+		bPath, err = defaultBaselinePath(tgt.Raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error determining baseline path: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	if _, err := os.Stat(bPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "Baseline snapshot not found at %s.\nRun 'netdiff diagnose %s' first to capture a working baseline, or pass two snapshots:\n  netdiff ask <good.ndiff> <bad.ndiff> %q\n", bPath, tgt.Raw, question)
+		os.Exit(1)
+	}
+
+	baseSnap, err := snapshot.Load(bPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+		os.Exit(1)
+	}
+
+	engine := probe.NewEngine()
+	currSnap, err := engine.Capture(ctx, tgt)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error capturing current state: %v\n", err)
+		os.Exit(1)
+	}
+
+	comparison := diff.Compare(baseSnap, currSnap)
+	answer, err := reasoner.Ask(ctx, comparison, question)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error answering question: %v\n", err)
+		os.Exit(1)
+	}
+
+	if *asJSON {
+		out := map[string]string{
+			"target":   comparison.Target.Raw,
+			"question": question,
+			"answer":   answer,
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(out)
+		return
+	}
+
+	p.PrintAsk(comparison.Target.Raw, question, answer)
 }
 
 func runReport(args []string) {

@@ -422,4 +422,151 @@ func TestExplain_TLSCertificateDivergence(t *testing.T) {
 	if !strings.Contains(explanation.Hypotheses[0].Title, "Root CA") {
 		t.Errorf("expected hypothesis to mention Root CA, got: %s", explanation.Hypotheses[0].Title)
 	}
+
+	if explanation.Remediation == nil {
+		t.Fatal("expected remediation for TLS untrusted root")
+	}
+	if !strings.Contains(explanation.Remediation.ImmediateBash, "update-ca-certificates") {
+		t.Errorf("expected ca-certificates update command, got: %s", explanation.Remediation.ImmediateBash)
+	}
+}
+
+func TestExplain_RemediationCoverage(t *testing.T) {
+	reasoner := NewReasoner()
+
+	// Test Policy Remediation
+	policyRep := &model.ComparisonReport{
+		Target: model.Target{Raw: "10.40.8.21:8080", Host: "10.40.8.21", Port: 8080},
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "tun0", Table: 200, Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "eth0", Table: 254, Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusTimeout},
+		},
+		Differences: []model.Difference{
+			{Category: "Policy", Field: "policy_rule", WorkingValue: "to 10.40.0.0/16 lookup 200", FailingValue: "missing", Relevance: model.RelevanceHigh},
+		},
+	}
+	expPolicy, err := reasoner.Explain(context.Background(), policyRep, false)
+	if err != nil || expPolicy.Remediation == nil {
+		t.Fatalf("expected policy remediation, got err: %v", err)
+	}
+	if !strings.Contains(expPolicy.Remediation.ImmediateBash, "ip rule add to 10.40.8.21/32 lookup 200") {
+		t.Errorf("unexpected policy bash: %s", expPolicy.Remediation.ImmediateBash)
+	}
+	if !strings.Contains(expPolicy.Remediation.PermanentConfig, "routing-policy") {
+		t.Errorf("expected netplan routing policy, got: %s", expPolicy.Remediation.PermanentConfig)
+	}
+
+	// Test Firewall Remediation
+	fwRep := &model.ComparisonReport{
+		Target:          model.Target{Raw: "api.corp:443", Host: "api.corp", Port: 443},
+		WorkingSnapshot: &model.Snapshot{TCP: &model.TCPReport{Status: model.TCPStatusConnected}},
+		FailingSnapshot: &model.Snapshot{TCP: &model.TCPReport{Status: model.TCPStatusTimeout}},
+		Differences: []model.Difference{
+			{Category: "Firewall", Field: "drop_rule", WorkingValue: "none", FailingValue: "DROP tcp dpt:443", Relevance: model.RelevanceHigh},
+		},
+	}
+	expFW, err := reasoner.Explain(context.Background(), fwRep, false)
+	if err != nil || expFW.Remediation == nil {
+		t.Fatalf("expected firewall remediation, got err: %v", err)
+	}
+	if !strings.Contains(expFW.Remediation.ImmediateBash, "iptables -D OUTPUT -p tcp --dport 443 -j DROP") {
+		t.Errorf("unexpected firewall bash: %s", expFW.Remediation.ImmediateBash)
+	}
+
+	// Test Interface Remediation
+	ifaceRep := &model.ComparisonReport{
+		Target: model.Target{Raw: "10.0.0.1:80", Host: "10.0.0.1", Port: 80},
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "eth1", Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "eth1", Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusTimeout},
+		},
+		Differences: []model.Difference{
+			{Category: "Interface", Field: "admin_state", WorkingValue: "UP", FailingValue: "DOWN", Relevance: model.RelevanceHigh},
+		},
+	}
+	expIface, err := reasoner.Explain(context.Background(), ifaceRep, false)
+	if err != nil || expIface.Remediation == nil {
+		t.Fatalf("expected interface remediation, got err: %v", err)
+	}
+	if !strings.Contains(expIface.Remediation.ImmediateBash, "ip link set dev eth1 up") {
+		t.Errorf("unexpected iface bash: %s", expIface.Remediation.ImmediateBash)
+	}
+}
+
+func TestAsk_DeterministicGrounded(t *testing.T) {
+	reasoner := NewReasoner()
+	report := &model.ComparisonReport{
+		WorkingHost: "host-good",
+		FailingHost: "host-bad",
+		Target: model.Target{
+			Raw:  "10.40.8.21:8080",
+			Host: "10.40.8.21",
+			Port: 8080,
+		},
+		EarliestDivergence: "Policy Rule: from all to 10.40.0.0/16 lookup 200 != default main",
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{
+				EgressInterface: "tun0",
+				Table:           200,
+			},
+			TCP: &model.TCPReport{
+				Status:    model.TCPStatusConnected,
+				LatencyMs: 15,
+			},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{
+				EgressInterface: "eth0",
+				Table:           254,
+			},
+			TCP: &model.TCPReport{
+				Status: model.TCPStatusTimeout,
+			},
+		},
+		Differences: []model.Difference{
+			{
+				Category:     "Policy",
+				Field:        "policy_rule",
+				WorkingValue: "from all to 10.40.0.0/16 lookup 200",
+				FailingValue: "missing / lookup main",
+				Relevance:    model.RelevanceHigh,
+				Rationale:    "Traffic on failing host drops into main table instead of policy table 200",
+			},
+		},
+	}
+
+	// 1. General question
+	ans, err := reasoner.Ask(context.Background(), report, "Why is host-bad failing to connect?")
+	if err != nil {
+		t.Fatalf("unexpected ask error: %v", err)
+	}
+	if !strings.Contains(ans, "Earliest Divergence") || !strings.Contains(ans, "10.40.8.21:8080") {
+		t.Errorf("expected answer grounded in target and divergence, got: %s", ans)
+	}
+
+	// 2. Specific question about rule / routing
+	ansRule, err := reasoner.Ask(context.Background(), report, "Is there an ip rule difference?")
+	if err != nil {
+		t.Fatalf("unexpected ask error: %v", err)
+	}
+	if !strings.Contains(ansRule, "Policy") || !strings.Contains(ansRule, "lookup 200") {
+		t.Errorf("expected answer mentioning policy rule, got: %s", ansRule)
+	}
+
+	// 3. Question asking for fix / remediation
+	ansFix, err := reasoner.Ask(context.Background(), report, "How do I fix this issue?")
+	if err != nil {
+		t.Fatalf("unexpected ask error: %v", err)
+	}
+	if !strings.Contains(ansFix, "ip rule add") {
+		t.Errorf("expected answer with remediation command, got: %s", ansFix)
+	}
 }

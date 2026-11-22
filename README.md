@@ -40,17 +40,21 @@ netdiff capture 10.10.0.2:8080 -o bad.ndiff
 netdiff compare good.ndiff bad.ndiff
 netdiff graph good.ndiff bad.ndiff
 
-# 4. Synthesize diagnostic explanation and recommended probe:
+# 4. Synthesize diagnostic explanation and actionable remediation:
 netdiff explain good.ndiff bad.ndiff
 
-# 5. Run the validation probe in the failing environment:
+# 5. Ask conversational debugging questions grounded in verified evidence:
+netdiff ask good.ndiff bad.ndiff "Why is the connection timing out?"
+netdiff ask good.ndiff bad.ndiff "How do I fix this issue?"
+
+# 6. Run the validation probe in the failing environment:
 netdiff probe TEST_INTERFACE_STATE veth-client
 
-# 6. (Optional) Generate a Markdown or standalone interactive HTML incident report:
+# 7. (Optional) Generate a Markdown or standalone interactive HTML incident report:
 netdiff report good.ndiff bad.ndiff -o incident.md
 netdiff report good.ndiff bad.ndiff --html -o report.html
 
-# 7. (Optional) Launch the interactive browser visualizer:
+# 8. (Optional) Launch the interactive browser visualizer:
 netdiff ui good.ndiff bad.ndiff -p 8080
 ```
 
@@ -140,7 +144,8 @@ NetDiff is designed to accurately identify and distinguish between common networ
 | `netdiff capture <target> [-o file.ndiff]` | Capture target network state to console or `.ndiff` snapshot |
 | `netdiff compare <good> <bad> [-g] [-v] [-j]` | Compare two snapshots and highlight causal differences |
 | `netdiff graph <good> <bad> [--ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
-| `netdiff explain <good> <bad> [-g] [--ai] [--validate]` | Synthesize diagnostic explanation and recommended validation probe |
+| `netdiff explain <good> <bad> [-g] [--ai] [--validate]` | Synthesize diagnostic explanation, remediation playbook, and probe |
+| `netdiff ask <good> <bad> "<question>" [-j]` | Ask conversational debugging questions grounded in snapshot evidence |
 | `netdiff report <good> <bad> [-o file] [--html]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff probe <name> [param] [-t <target>]` | Execute a bounded diagnostic validation probe |

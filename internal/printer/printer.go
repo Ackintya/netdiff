@@ -450,7 +450,49 @@ func (p *Printer) PrintDiagnosis(comp *model.ComparisonReport, exp *ai.Explanati
 		fmt.Fprintln(p.Out)
 	}
 
+	if exp.Remediation != nil {
+		fmt.Fprintf(p.Out, "  %s%s╔══════════════════════════════════════════════════════════════════════╗%s\n", ColorBold, ColorGreen, ColorReset)
+		fmt.Fprintf(p.Out, "  %s║  REMEDIATION PLAYBOOK (Actionable Fix)                               ║%s\n", ColorBold, ColorReset)
+		fmt.Fprintf(p.Out, "  %s%s╚══════════════════════════════════════════════════════════════════════╝%s\n\n", ColorBold, ColorGreen, ColorReset)
+
+		if exp.Remediation.ImmediateBash != "" {
+			fmt.Fprintf(p.Out, "  %sImmediate Fix (copy-pasteable):%s\n", ColorBold, ColorReset)
+			fmt.Fprintf(p.Out, "  %s$ %s%s\n\n", ColorBold+ColorCyan, exp.Remediation.ImmediateBash, ColorReset)
+		}
+		if exp.Remediation.PermanentConfig != "" {
+			fmt.Fprintf(p.Out, "  %sPermanent Configuration:%s\n", ColorBold, ColorReset)
+			cfgLines := strings.Split(exp.Remediation.PermanentConfig, "\n")
+			for _, line := range cfgLines {
+				fmt.Fprintf(p.Out, "    %s%s%s\n", ColorMuted, line, ColorReset)
+			}
+			fmt.Fprintln(p.Out)
+		}
+		if exp.Remediation.VerificationCmd != "" {
+			fmt.Fprintf(p.Out, "  %sVerification:%s\n", ColorBold, ColorReset)
+			fmt.Fprintf(p.Out, "  %s$ %s%s\n\n", ColorBold+ColorGreen, exp.Remediation.VerificationCmd, ColorReset)
+		}
+		if exp.Remediation.Explanation != "" {
+			wrapped := wrapText(exp.Remediation.Explanation, 68, "  ")
+			fmt.Fprintf(p.Out, "  %sWhy: %s%s\n\n", ColorBold, ColorReset, wrapped)
+		}
+	}
+
 	fmt.Fprintf(p.Out, "  %sDiagnosis provided by: %s%s\n\n", ColorMuted, exp.Provider, ColorReset)
+}
+
+// PrintAsk renders a grounded conversational Q&A card in the terminal.
+func (p *Printer) PrintAsk(target, question, answer string) {
+	fmt.Fprintf(p.Out, "\n  %s╔══════════════════════════════════════════════════════════════════════╗%s\n", ColorCyan, ColorReset)
+	titleText := fmt.Sprintf("NETDIFF INVESTIGATION  ·  %s", target)
+	fmt.Fprintf(p.Out, "  %s║%s  %-68s%s║%s\n", ColorCyan, ColorBold, titleText, ColorCyan, ColorReset)
+	fmt.Fprintf(p.Out, "  %s╚══════════════════════════════════════════════════════════════════════╝%s\n\n", ColorCyan, ColorReset)
+
+	fmt.Fprintf(p.Out, "  %sQuestion:%s %q\n\n", ColorBold, ColorReset, question)
+	fmt.Fprintf(p.Out, "  %sEvidence-Grounded Answer:%s\n", ColorBold+ColorGreen, ColorReset)
+	for _, line := range strings.Split(answer, "\n") {
+		fmt.Fprintf(p.Out, "  %s\n", line)
+	}
+	fmt.Fprintln(p.Out)
 }
 
 func (p *Printer) printPathChain(comp *model.ComparisonReport) {

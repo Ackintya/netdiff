@@ -55,4 +55,11 @@ func TestReorderArgs(t *testing.T) {
 	if diagReordered[0] != "--baseline" || diagReordered[1] != "custom.ndiff" {
 		t.Errorf("unexpected reorder for --baseline: %v", diagReordered)
 	}
+
+	// Test ask flag reordering
+	askArgs := []string{"host-a.ndiff", "host-b.ndiff", "--json", "Why does it fail?"}
+	askReordered := reorderArgs(askArgs)
+	if askReordered[0] != "--json" {
+		t.Errorf("expected --json first, got: %v", askReordered)
+	}
 }

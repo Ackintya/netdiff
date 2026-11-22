@@ -697,6 +697,19 @@
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </div>
           </div>
+
+          <div id="remediation-recommendation" class="probe-card" style="display: none; border-color: rgba(0, 230, 118, 0.4); background: rgba(0, 230, 118, 0.05); margin-top: 14px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--status-green); font-weight: 700; margin-bottom: 4px;">Actionable Remediation</div>
+            <div id="rem-explanation" style="font-size: 12px; color: var(--text-main); margin-bottom: 8px;">Explanation...</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600;">Immediate Bash Fix:</div>
+            <div id="rem-cmd" class="probe-cmd" onclick="copyRemCmd()" title="Click to copy fix" style="background: rgba(0,0,0,0.4); border-color: rgba(0, 230, 118, 0.3);">
+              <span id="rem-cmd-text" style="color: var(--status-green);">sudo ...</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+            <div id="rem-verify-container" style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+              <span>Verify: </span><code id="rem-verify-cmd" style="color: var(--accent-cyan); font-family: var(--font-mono);">ip ...</code>
+            </div>
+          </div>
         </div>
       </aside>
     </div>
@@ -1152,6 +1165,28 @@
         const cmd = `netdiff probe ${exp.next_best_probe.probe_name} ${exp.next_best_probe.parameter || ''} -t ${targetRaw}`.trim();
         document.getElementById('probe-cmd-text').textContent = cmd;
       }
+
+      if (exp.remediation) {
+        const rCard = document.getElementById('remediation-recommendation');
+        if (rCard) {
+          rCard.style.display = 'block';
+          document.getElementById('rem-explanation').textContent = exp.remediation.explanation || '';
+          document.getElementById('rem-cmd-text').textContent = exp.remediation.immediate_bash || '';
+          if (exp.remediation.verification_cmd) {
+            document.getElementById('rem-verify-cmd').textContent = exp.remediation.verification_cmd;
+            document.getElementById('rem-verify-container').style.display = 'block';
+          } else {
+            document.getElementById('rem-verify-container').style.display = 'none';
+          }
+        }
+      }
+    }
+
+    function copyRemCmd() {
+      const text = document.getElementById('rem-cmd-text').textContent;
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Copied remediation fix to clipboard!");
+      });
     }
 
     function copyProbeCmd() {

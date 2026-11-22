@@ -261,6 +261,22 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 		}
 	}
 
+	if exp != nil && exp.Remediation != nil {
+		sb.WriteString("## 7. Actionable Remediation Playbook\n\n")
+		if exp.Remediation.ImmediateBash != "" {
+			sb.WriteString("**Immediate Fix (Failing Host):**\n```bash\n" + exp.Remediation.ImmediateBash + "\n```\n\n")
+		}
+		if exp.Remediation.PermanentConfig != "" {
+			sb.WriteString("**Permanent Configuration:**\n```yaml\n" + exp.Remediation.PermanentConfig + "\n```\n\n")
+		}
+		if exp.Remediation.VerificationCmd != "" {
+			sb.WriteString("**Verification Command:**\n```bash\n" + exp.Remediation.VerificationCmd + "\n```\n\n")
+		}
+		if exp.Remediation.Explanation != "" {
+			sb.WriteString(fmt.Sprintf("> **Why this resolves the divergence:** %s\n\n", exp.Remediation.Explanation))
+		}
+	}
+
 	return sb.String()
 }
 

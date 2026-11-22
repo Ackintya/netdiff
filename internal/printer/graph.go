@@ -351,6 +351,21 @@ func (p *Printer) PrintGraph(comp *model.ComparisonReport, exp *ai.ExplanationRe
 		}
 		fmt.Fprintln(p.Out)
 	}
+
+	// Actionable Remediation Playbook
+	if exp != nil && exp.Remediation != nil {
+		fmt.Fprintf(p.Out, "%sActionable Remediation Playbook:%s\n", ColorBold+ColorGreen, ColorReset)
+		if exp.Remediation.ImmediateBash != "" {
+			fmt.Fprintf(p.Out, "  %sImmediate Fix:%s   $ %s%s%s\n", ColorBold, ColorReset, ColorBold+ColorCyan, exp.Remediation.ImmediateBash, ColorReset)
+		}
+		if exp.Remediation.VerificationCmd != "" {
+			fmt.Fprintf(p.Out, "  %sVerification:%s    $ %s%s%s\n", ColorBold, ColorReset, ColorGreen, exp.Remediation.VerificationCmd, ColorReset)
+		}
+		if exp.Remediation.Explanation != "" {
+			fmt.Fprintf(p.Out, "  %sWhy:%s             %s\n", ColorBold, ColorReset, exp.Remediation.Explanation)
+		}
+		fmt.Fprintln(p.Out)
+	}
 }
 
 func formatRouteTable(r *model.RouteReport) string {
