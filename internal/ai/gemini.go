@@ -17,7 +17,7 @@ import (
 // DiagnosticHypothesis represents a reasoned cause with support level.
 type DiagnosticHypothesis struct {
 	Title         string `json:"title"`
-	SupportLevel  string `json:"support_level"`  // "strong", "moderate", "weak"
+	SupportLevel  string `json:"support_level"` // "strong", "moderate", "weak"
 	Rationale     string `json:"rationale"`
 	ConfidencePct int    `json:"confidence_pct,omitempty"` // 0-100 visual confidence
 }

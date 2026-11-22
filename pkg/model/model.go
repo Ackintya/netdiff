@@ -113,13 +113,13 @@ type FirewallReport struct {
 // TLSReport captures TLS handshake negotiation and certificate validation details.
 type TLSReport struct {
 	HandshakeSuccess bool     `json:"handshake_success"`
-	Version          string   `json:"version,omitempty"`        // e.g. "TLS 1.3", "TLS 1.2"
-	CipherSuite      string   `json:"cipher_suite,omitempty"`   // e.g. "TLS_AES_128_GCM_SHA256"
-	ServerName       string   `json:"server_name,omitempty"`    // SNI used
-	Issuer           string   `json:"issuer,omitempty"`         // Common Name / Org of issuer
-	Subject          string   `json:"subject,omitempty"`        // Common Name / Org of cert
-	DNSNames         []string `json:"dns_names,omitempty"`      // SANs
-	Expiry           string   `json:"expiry,omitempty"`         // RFC3339 formatted expiration
+	Version          string   `json:"version,omitempty"`      // e.g. "TLS 1.3", "TLS 1.2"
+	CipherSuite      string   `json:"cipher_suite,omitempty"` // e.g. "TLS_AES_128_GCM_SHA256"
+	ServerName       string   `json:"server_name,omitempty"`  // SNI used
+	Issuer           string   `json:"issuer,omitempty"`       // Common Name / Org of issuer
+	Subject          string   `json:"subject,omitempty"`      // Common Name / Org of cert
+	DNSNames         []string `json:"dns_names,omitempty"`    // SANs
+	Expiry           string   `json:"expiry,omitempty"`       // RFC3339 formatted expiration
 	DaysUntilExpiry  int      `json:"days_until_expiry,omitempty"`
 	Error            string   `json:"error,omitempty"`          // Detailed error string
 	ErrorCategory    string   `json:"error_category,omitempty"` // "untrusted_root", "expired", "hostname_mismatch", "protocol_version", "handshake_failed"
