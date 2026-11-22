@@ -368,6 +368,46 @@ func TestGenerateSummary_RefusedPort(t *testing.T) {
 	}
 }
 
+func TestNeighborARPFailureDivergence(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		Route:  &model.RouteReport{EgressInterface: "veth-client", Success: true},
+		Neighbor: &model.NeighborReport{
+			IP:      "10.10.0.2",
+			MAC:     "52:54:00:12:34:56",
+			State:   "REACHABLE",
+			Present: true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "veth-client", Success: true},
+		Neighbor: &model.NeighborReport{
+			IP:      "10.10.0.2",
+			State:   "INCOMPLETE",
+			Present: false,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusTimeout},
+	}
+
+	report := Compare(good, bad)
+	var foundNeighDiff bool
+	for _, d := range report.Differences {
+		if d.Category == "Neighbor" && d.Relevance == model.RelevanceHigh {
+			foundNeighDiff = true
+			if !containsSubstr(d.Rationale, "Layer 2") {
+				t.Errorf("expected rationale to mention Layer 2, got: %s", d.Rationale)
+			}
+		}
+	}
+
+	if !foundNeighDiff {
+		t.Fatal("expected HIGH relevance Neighbor diff when neighbor is INCOMPLETE and TCP timed out")
+	}
+}
+
 func containsSubstr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || (len(s) > 0 && len(sub) > 0 && stringsContains(s, sub)))
 }

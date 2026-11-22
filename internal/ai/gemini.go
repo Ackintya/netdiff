@@ -349,6 +349,35 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			Reason:    "Testing direct IP reachability isolates hostname/domain filtering rules from network interface ACLs.",
 		}
 
+	case "Neighbor":
+		targetIP := report.Target.Host
+		if report.WorkingSnapshot.Neighbor != nil && report.WorkingSnapshot.Neighbor.IP != "" {
+			targetIP = report.WorkingSnapshot.Neighbor.IP
+		} else if report.FailingSnapshot.Neighbor != nil && report.FailingSnapshot.Neighbor.IP != "" {
+			targetIP = report.FailingSnapshot.Neighbor.IP
+		}
+		result.Summary = fmt.Sprintf("Layer 2 neighbor resolution (ARP/NDP) failure is the primary root cause. IP routing succeeded, but the failing host cannot resolve the MAC address for next-hop %s (state: %s). Observed TCP outcome: %s.",
+			targetIP, primary.FailingValue, fTCP)
+
+		result.Hypotheses = []DiagnosticHypothesis{
+			{
+				Title:        "Gateway or Next-Hop Unreachable (ARP Resolution Failed)",
+				SupportLevel: "strong",
+				Rationale:    fmt.Sprintf("The next-hop IP (%s) exists in the routing table, but neighbor state is %s with no MAC address. The target host or router may be offline, powered down, or unreachable on the physical/virtual wire.", targetIP, primary.FailingValue),
+			},
+			{
+				Title:        "Layer 2 Network Isolation or VLAN Mismatch",
+				SupportLevel: "moderate",
+				Rationale:    "Broadcast ARP requests are not receiving a response, possibly due to switch port isolation, security ACLs, or an incorrect VLAN tag.",
+			},
+		}
+
+		result.NextBestProbe = &DiagnosticProbeChoice{
+			ProbeName: "TEST_DIRECT_IP",
+			Parameter: targetIP,
+			Reason:    "Validate whether the next-hop IP responds to direct IP ICMP/ping or if Layer 2 is completely unmapped.",
+		}
+
 	default:
 		result.Summary = fmt.Sprintf("Network divergence detected in %s (%s vs %s). This path divergence directly accounts for observed TCP outcome (%s).",
 			primary.Category, primary.WorkingValue, primary.FailingValue, fTCP)

@@ -330,3 +330,46 @@ func TestConfidenceAssignment(t *testing.T) {
 		}
 	}
 }
+
+func TestExplain_NeighborARPDivergence(t *testing.T) {
+	reasoner := NewReasoner()
+	report := &model.ComparisonReport{
+		Target: model.Target{Raw: "10.10.0.2:8080", Host: "10.10.0.2", Port: 8080},
+		WorkingSnapshot: &model.Snapshot{
+			Route:    &model.RouteReport{EgressInterface: "veth-client", Success: true},
+			Neighbor: &model.NeighborReport{IP: "10.10.0.2", MAC: "52:54:00:12:34:56", State: "REACHABLE", Present: true},
+			TCP:      &model.TCPReport{Status: model.TCPStatusConnected},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route:    &model.RouteReport{EgressInterface: "veth-client", Success: true},
+			Neighbor: &model.NeighborReport{IP: "10.10.0.2", State: "INCOMPLETE", Present: false},
+			TCP:      &model.TCPReport{Status: model.TCPStatusTimeout},
+		},
+		Differences: []model.Difference{
+			{
+				Category:     "Neighbor",
+				Field:        "arp_state",
+				WorkingValue: "REACHABLE",
+				FailingValue: "INCOMPLETE",
+				Relevance:    model.RelevanceHigh,
+			},
+		},
+	}
+
+	explanation, err := reasoner.Explain(context.Background(), report, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(explanation.Summary, "neighbor resolution (ARP/NDP)") {
+		t.Errorf("expected summary to mention neighbor resolution (ARP/NDP), got: %s", explanation.Summary)
+	}
+
+	if len(explanation.Hypotheses) == 0 {
+		t.Fatal("expected at least one hypothesis")
+	}
+
+	if !strings.Contains(explanation.Hypotheses[0].Title, "ARP Resolution Failed") {
+		t.Errorf("expected hypothesis title to mention ARP, got: %s", explanation.Hypotheses[0].Title)
+	}
+}

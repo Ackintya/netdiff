@@ -109,3 +109,49 @@ func TestEarliestDivergenceWhenRouteLookupFails(t *testing.T) {
 		)
 	}
 }
+
+func TestDAGEarliestDivergenceNeighbor(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Host: "10.10.0.2", Port: 8080, IsIP: true},
+		Route: &model.RouteReport{
+			DestinationIP:   "10.10.0.2",
+			Table:           254,
+			TableName:       "main",
+			EgressInterface: "veth-client",
+			Success:         true,
+		},
+		Neighbor: &model.NeighborReport{
+			IP:      "10.10.0.2",
+			MAC:     "52:54:00:12:34:56",
+			State:   "REACHABLE",
+			Present: true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route: &model.RouteReport{
+			DestinationIP:   "10.10.0.2",
+			Table:           254,
+			TableName:       "main",
+			EgressInterface: "veth-client",
+			Success:         true,
+		},
+		Neighbor: &model.NeighborReport{
+			IP:      "10.10.0.2",
+			State:   "INCOMPLETE",
+			Present: false,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusTimeout},
+	}
+
+	d := BuildDAG(good, bad)
+	if d == nil || d.EarliestDivergence == nil {
+		t.Fatal("expected earliest divergence")
+	}
+
+	if d.EarliestDivergence.Type != NodeNeighbor {
+		t.Fatalf("expected earliest divergence to be %s, got %s", NodeNeighbor, d.EarliestDivergence.Type)
+	}
+}

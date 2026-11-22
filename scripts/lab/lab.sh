@@ -146,6 +146,10 @@ lab_inject() {
       echo "Action: Target closed port $CLOSED_PORT (service not listening)"
       # No network modification needed; target changes to 10.10.0.2:8081
       ;;
+    arp-failure)
+      echo "Action: Forcing neighbor ARP entry into FAILED state in $CLIENT_NS"
+      ip -n "$CLIENT_NS" neigh replace "$SERVER_IP" dev veth-client nud failed 2>/dev/null || ip -n "$CLIENT_NS" neigh del "$SERVER_IP" dev veth-client 2>/dev/null || true
+      ;;
     *)
       echo "Unknown scenario: $scenario" >&2
       exit 1
@@ -177,6 +181,9 @@ lab_restore() {
   ip netns exec "$CLIENT_NS" iptables -F OUTPUT 2>/dev/null || true
   # Restore resolver
   echo "nameserver $SERVER_IP" > "/etc/netns/$CLIENT_NS/resolv.conf" 2>/dev/null || true
+  # Flush neighbor ARP table and re-populate with fresh ping
+  ip -n "$CLIENT_NS" neigh flush dev veth-client 2>/dev/null || true
+  ip netns exec "$CLIENT_NS" ping -c 1 -W 1 "$SERVER_IP" >/dev/null 2>&1 || true
 
   # Ensure server process is alive
   if [ -f "$PID_SERVER" ] && ! kill -0 "$(cat "$PID_SERVER")" 2>/dev/null; then
@@ -265,20 +272,24 @@ lab_verify() {
       # Server was killed; probe confirms host reachable but port 8080 is now actively refused.
       ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DIRECT_IP "$SERVER_IP" -t "$TARGET_HOST" || true
       ;;
+    arp-failure)
+      echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_DIRECT_IP $SERVER_IP -t $TARGET_HOST"
+      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DIRECT_IP "$SERVER_IP" -t "$TARGET_HOST" || true
+      ;;
   esac
 }
 
-# 8. Run all 5 scenarios
+# 8. Run all scenarios
 lab_run_all() {
   check_prereqs
   echo "=========================================================="
-  echo " NetDiff v0.4 Automated Acceptance Suite (5 Scenarios)"
+  echo " NetDiff Acceptance Suite (6 Scenarios)"
   echo "=========================================================="
 
   lab_setup
   lab_baseline
 
-  local scenarios=("iface-down" "route-missing" "firewall-drop" "dns-failure" "port-closed")
+  local scenarios=("iface-down" "route-missing" "firewall-drop" "dns-failure" "port-closed" "arp-failure")
   local passed=0
   local failed=0
 
@@ -337,12 +348,12 @@ usage() {
   echo "Commands:"
   echo "  setup                  Create namespaces, veth pair, and mock servers"
   echo "  baseline               Capture working baseline state (good.ndiff)"
-  echo "  inject <scenario>      Inject a fault (iface-down, route-missing, firewall-drop, dns-failure, port-closed)"
+  echo "  inject <scenario>      Inject a fault (iface-down, route-missing, firewall-drop, dns-failure, port-closed, arp-failure)"
   echo "  capture <name> [tgt]   Capture network state to <name>.ndiff"
   echo "  verify <scenario>      Compare baseline to scenario snapshot and run validation probe"
   echo "  restore                Restore environment to clean working baseline"
   echo "  cleanup                Tear down namespaces, kill servers, and clean temporary files"
-  echo "  run-all                Execute full automated test suite for all 5 scenarios"
+  echo "  run-all                Execute full automated test suite for all 6 scenarios"
 }
 
 case "${1:-}" in

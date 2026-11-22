@@ -139,7 +139,17 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 		IsDivergent: wIface != fIface,
 	}
 
-	// 9. MTU
+	// 9. Neighbor ARP
+	wNeigh := formatNeighbor(working.Neighbor)
+	fNeigh := formatNeighbor(failing.Neighbor)
+	nNeigh := &Node{
+		Type:        NodeNeighbor,
+		WorkingVal:  wNeigh,
+		FailingVal:  fNeigh,
+		IsDivergent: wNeigh != fNeigh,
+	}
+
+	// 10. MTU
 	wMTU := formatMTU(working.Interface)
 	fMTU := formatMTU(failing.Interface)
 	nMTU := &Node{
@@ -149,7 +159,7 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 		IsDivergent: wMTU != fMTU,
 	}
 
-	// 10. TCP
+	// 11. TCP
 	wTCP := formatTCP(working.TCP)
 	fTCP := formatTCP(failing.TCP)
 	nTCP := &Node{
@@ -166,11 +176,12 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 	nRule.Children = []*Node{nTable}
 	nTable.Children = []*Node{nLookup}
 	nLookup.Children = []*Node{nGw, nSrc, nIface}
-	nIface.Children = []*Node{nMTU}
+	nIface.Children = []*Node{nNeigh}
+	nNeigh.Children = []*Node{nMTU}
 	nMTU.Children = []*Node{nTCP}
 
 	d.Root = nHostname
-	d.Nodes = []*Node{nHostname, nDNS, nDest, nRule, nTable, nLookup, nGw, nSrc, nIface, nMTU, nTCP}
+	d.Nodes = []*Node{nHostname, nDNS, nDest, nRule, nTable, nLookup, nGw, nSrc, nIface, nNeigh, nMTU, nTCP}
 
 	// Find the earliest divergent node in order of propagation
 	for _, n := range d.Nodes {
@@ -279,4 +290,23 @@ func formatRouteLookup(r *model.RouteReport) string {
 	}
 
 	return "failed"
+}
+
+func formatNeighbor(n *model.NeighborReport) string {
+	if n == nil || (n.IP == "" && n.State == "") {
+		return "none"
+	}
+	if !n.Present {
+		if n.State != "" {
+			return fmt.Sprintf("%s (%s/unresolved)", n.IP, n.State)
+		}
+		return fmt.Sprintf("%s (incomplete/unresolved)", n.IP)
+	}
+	if n.State != "" {
+		return fmt.Sprintf("%s [%s]", n.IP, n.State)
+	}
+	if n.MAC != "" {
+		return fmt.Sprintf("%s (%s)", n.IP, n.MAC)
+	}
+	return n.IP
 }

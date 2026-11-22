@@ -358,15 +358,39 @@ func diffNeighbor(w, f *model.NeighborReport) []model.Difference {
 		return diffs
 	}
 
+	if w.Present != f.Present {
+		diffs = append(diffs, model.Difference{
+			Category:       "Neighbor",
+			Field:          "arp_resolution",
+			WorkingValue:   fmt.Sprintf("present=%t (mac=%s)", w.Present, w.MAC),
+			FailingValue:   fmt.Sprintf("present=%t (mac=%s)", f.Present, f.MAC),
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Neighbor ARP",
+			Rationale:      "Next-hop Layer 2 neighbor entry presence differs.",
+		})
+	}
+
 	if w.State != f.State && (w.State != "" || f.State != "") {
 		diffs = append(diffs, model.Difference{
 			Category:       "Neighbor",
 			Field:          "arp_state",
 			WorkingValue:   firstNonEmpty(w.State, "none"),
 			FailingValue:   firstNonEmpty(f.State, "none"),
-			Relevance:      model.RelevanceMedium,
-			DependencyNode: "Neighbor",
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "Neighbor ARP",
 			Rationale:      "Neighbor ARP/NDP resolution state diverges.",
+		})
+	}
+
+	if w.MAC != f.MAC && w.MAC != "" && f.MAC != "" {
+		diffs = append(diffs, model.Difference{
+			Category:       "Neighbor",
+			Field:          "arp_mac",
+			WorkingValue:   w.MAC,
+			FailingValue:   f.MAC,
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "Neighbor ARP",
+			Rationale:      "Next-hop MAC address diverges between environments.",
 		})
 	}
 
@@ -376,6 +400,7 @@ func diffNeighbor(w, f *model.NeighborReport) []model.Difference {
 func evaluateRelevance(diffs []model.Difference, working, failing *model.Snapshot) []model.Difference {
 	isRefused := failing.TCP != nil && failing.TCP.Status == model.TCPStatusRefused
 	isTimeout := failing.TCP != nil && failing.TCP.Status == model.TCPStatusTimeout
+	isUnreachable := failing.TCP != nil && (failing.TCP.Status == model.TCPStatusUnreachable || failing.TCP.Status == model.TCPStatusFailed)
 	routeLookupFailed := failing.Route != nil && !failing.Route.Success
 
 	for i := range diffs {
@@ -398,6 +423,15 @@ func evaluateRelevance(diffs []model.Difference, working, failing *model.Snapsho
 		if isTimeout && d.Category == "Firewall" && failing.Firewall != nil && failing.Firewall.Active {
 			d.Relevance = model.RelevanceHigh
 			d.Rationale = "Host packet filtering (iptables/nftables) is active while connection timed out, suggesting packets may be silently dropped."
+		}
+
+		// When TCP timed out, unreachable, or failed, and failing neighbor resolution is INCOMPLETE or FAILED or not present
+		if (isTimeout || isUnreachable || failing.TCP == nil) &&
+			failing.Neighbor != nil &&
+			(strings.EqualFold(failing.Neighbor.State, "INCOMPLETE") || strings.EqualFold(failing.Neighbor.State, "FAILED") || !failing.Neighbor.Present) &&
+			d.Category == "Neighbor" {
+			d.Relevance = model.RelevanceHigh
+			d.Rationale = fmt.Sprintf("Next-hop ARP/neighbor resolution failed on failing host (state: %s, MAC: %q). Packets cannot be encapsulated at Layer 2.", failing.Neighbor.State, failing.Neighbor.MAC)
 		}
 	}
 

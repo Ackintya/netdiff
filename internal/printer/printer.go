@@ -423,6 +423,7 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 	dnsStatus := "DNS"
 	routeStatus := "Route"
 	ifaceStatus := "Interface"
+	arpStatus := "ARP"
 	tcpStatus := "TCP"
 
 	f := comp.FailingSnapshot
@@ -435,6 +436,9 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 		}
 		if f.Interface != nil && !isInterfaceUp(f.Interface) {
 			ifaceStatus = "Interface✗"
+		}
+		if f.Neighbor != nil && (!f.Neighbor.Present || strings.EqualFold(f.Neighbor.State, "INCOMPLETE") || strings.EqualFold(f.Neighbor.State, "FAILED")) {
+			arpStatus = "ARP✗"
 		}
 		if f.TCP != nil && f.TCP.Status != model.TCPStatusConnected {
 			tcpStatus = "TCP✗"
@@ -450,6 +454,8 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 				routeStatus = "Route✗"
 			case "Interface":
 				ifaceStatus = "Interface✗"
+			case "Neighbor":
+				arpStatus = "ARP✗"
 			case "TCP":
 				tcpStatus = "TCP✗"
 			}
@@ -463,11 +469,12 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 		return ColorGreen + label + ColorReset
 	}
 
-	fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s\n\n",
+	fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s → %s\n\n",
 		ColorBold, ColorReset,
 		colorize(dnsStatus),
 		colorize(routeStatus),
 		colorize(ifaceStatus),
+		colorize(arpStatus),
 		colorize(tcpStatus),
 	)
 }
