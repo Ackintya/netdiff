@@ -95,15 +95,23 @@ echo "=========================================================="
 
 echo ""
 echo "=========================================================="
+echo " NetDiff Terminal Causal Dependency Graph"
+echo "=========================================================="
+./netdiff graph /tmp/good.ndiff /tmp/bad.ndiff
+
+echo ""
+echo "=========================================================="
 echo " NetDiff Diagnostic Explanation & Next-Best Probe"
 echo "=========================================================="
 ./netdiff explain /tmp/good.ndiff /tmp/bad.ndiff
 
 echo ""
 echo "=========================================================="
-echo " NetDiff Automated Markdown Incident Report"
+echo " NetDiff Automated Markdown & Interactive HTML Reports"
 echo "=========================================================="
 ./netdiff report /tmp/good.ndiff /tmp/bad.ndiff
+./netdiff report /tmp/good.ndiff /tmp/bad.ndiff --html -o /tmp/report.html
+echo "✓ Standalone interactive HTML report saved to /tmp/report.html"
 
 kill $SERVER_PID 2>/dev/null || true
 echo ""

@@ -63,7 +63,32 @@ Current schema version: `ndiff/v1`
     "status": "connected",
     "latency_ms": 27,
     "remote_ip": "10.40.8.21",
-    "remote_port": 443
+    "remote_port": 443,
+    "socket_info": {
+      "rtt_us": 1840,
+      "rtt_var_us": 420,
+      "min_rtt_us": 1200,
+      "snd_cwnd": 10,
+      "snd_mss": 1380,
+      "total_retrans": 0,
+      "lost": 0,
+      "pmtu": 1420
+    }
+  },
+  "tls": {
+    "handshake_success": true,
+    "version": "TLS 1.3",
+    "cipher_suite": "TLS_AES_128_GCM_SHA256",
+    "server_name": "api.internal.company",
+    "issuer": "Internal Enterprise CA",
+    "subject": "api.internal.company",
+    "dns_names": ["api.internal.company", "*.internal.company"],
+    "expiry": "2027-10-09T00:00:00Z",
+    "days_until_expiry": 365
+  },
+  "firewall": {
+    "backend": "iptables",
+    "active": false
   },
   "proxy": {
     "http_proxy": "",

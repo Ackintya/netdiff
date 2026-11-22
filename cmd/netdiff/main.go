@@ -34,6 +34,7 @@ Commands:
   check <target>          Fast reachability probe with one-line summary
   capture <target>        Capture relevant network state for a target (e.g. host:port)
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
+  graph <good> <bad>      Render terminal ASCII/Unicode causal dependency graph
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
   report <good> <bad>     Generate incident report in markdown or standalone interactive HTML
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
@@ -43,6 +44,7 @@ Commands:
 Flags for 'diagnose':
   -b, --baseline <file>   Use custom baseline .ndiff snapshot (default: ~/.netdiff/baselines/<target>.ndiff)
   -u, --update            Update/record baseline snapshot with current network state
+  -g, --graph             Render terminal causal dependency graph
   --html <file>           Export standalone interactive HTML report to file
   --ai                    Enable Gemini AI reasoning synthesis layer
   --validate              Immediately execute recommended validation probe against target
@@ -54,8 +56,12 @@ Flags for 'capture':
   -o, --output <file>     Path to output .ndiff snapshot file (default: prints summary)
 
 Flags for 'compare':
+  -g, --graph             Render terminal causal dependency graph
   -v, --verbose           Show lower-priority path differences
   -j, --json              Output machine-readable JSON comparison
+
+Flags for 'graph':
+  --ai                    Enable Gemini AI reasoning synthesis layer
 
 Flags for 'explain':
   --ai                    Enable Gemini AI reasoning synthesis layer
@@ -116,6 +122,9 @@ func main() {
 	case "compare":
 		runCompare(os.Args[2:])
 
+	case "graph":
+		runGraph(os.Args[2:])
+
 	case "explain":
 		runExplain(os.Args[2:])
 
@@ -142,6 +151,8 @@ func runDiagnose(args []string) {
 	updateBaseline := fs.Bool("u", false, "Update baseline with current network state")
 	fs.BoolVar(updateBaseline, "update", false, "Update baseline with current network state")
 	htmlOutput := fs.String("html", "", "Export standalone interactive HTML report to file")
+	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
+	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
 	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
 	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
 
@@ -229,7 +240,11 @@ func runDiagnose(args []string) {
 		os.Exit(1)
 	}
 
-	p.PrintDiagnosis(comparison, explanation)
+	if *graphFlag {
+		p.PrintGraph(comparison, explanation)
+	} else {
+		p.PrintDiagnosis(comparison, explanation)
+	}
 
 	if *htmlOutput != "" {
 		htmlContent := report.GenerateHTML(comparison, explanation)
@@ -355,6 +370,8 @@ func runCompare(args []string) {
 	fs.BoolVar(verbose, "verbose", false, "Show lower-priority differences")
 	asJSON := fs.Bool("j", false, "Output machine-readable JSON")
 	fs.BoolVar(asJSON, "json", false, "Output machine-readable JSON")
+	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
+	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -381,16 +398,61 @@ func runCompare(args []string) {
 
 	comparison := diff.Compare(snapA, snapB)
 	p := printer.New()
+
+	if *graphFlag {
+		reasoner := ai.NewReasoner()
+		explanation, _ := reasoner.Explain(context.Background(), comparison, false)
+		p.PrintGraph(comparison, explanation)
+		return
+	}
+
 	if err := p.PrintComparison(comparison, *asJSON, *verbose); err != nil {
 		fmt.Fprintf(os.Stderr, "Error rendering comparison: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+func runGraph(args []string) {
+	fs := flag.NewFlagSet("graph", flag.ExitOnError)
+	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	files := fs.Args()
+	if len(files) < 2 {
+		fmt.Fprintln(os.Stderr, "Error: graph requires two snapshot files: netdiff graph <good.ndiff> <bad.ndiff> [--ai]")
+		os.Exit(1)
+	}
+
+	snapA, err := snapshot.Load(files[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+		os.Exit(1)
+	}
+
+	snapB, err := snapshot.Load(files[1])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
+		os.Exit(1)
+	}
+
+	comparison := diff.Compare(snapA, snapB)
+	reasoner := ai.NewReasoner()
+	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
+
+	p := printer.New()
+	p.PrintGraph(comparison, explanation)
+}
+
 func runExplain(args []string) {
 	fs := flag.NewFlagSet("explain", flag.ExitOnError)
 	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning layer")
 	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
+	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
+	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -425,7 +487,11 @@ func runExplain(args []string) {
 	}
 
 	p := printer.New()
-	p.PrintDiagnosis(comparison, explanation)
+	if *graphFlag {
+		p.PrintGraph(comparison, explanation)
+	} else {
+		p.PrintDiagnosis(comparison, explanation)
+	}
 
 	// Active closed-loop validation
 	if *validateFlag && explanation.NextBestProbe != nil {

@@ -36,8 +36,9 @@ netdiff capture 10.10.0.2:8080 -o good.ndiff
 # 2. Capture target network state in the failing environment:
 netdiff capture 10.10.0.2:8080 -o bad.ndiff
 
-# 3. Compare snapshots:
+# 3. Compare snapshots or render the terminal causal DAG tree:
 netdiff compare good.ndiff bad.ndiff
+netdiff graph good.ndiff bad.ndiff
 
 # 4. Synthesize diagnostic explanation and recommended probe:
 netdiff explain good.ndiff bad.ndiff
@@ -134,11 +135,12 @@ NetDiff is designed to accurately identify and distinguish between common networ
 
 | Command | Description |
 |---|---|
-| `netdiff diagnose <target> [-b file.ndiff] [-u] [--html report.html] [--validate]` | Single-command diagnosis comparing against saved baseline |
+| `netdiff diagnose <target> [-b file.ndiff] [-u] [-g] [--html file] [--validate]` | Single-command diagnosis comparing against saved baseline |
 | `netdiff check <target>` | Fast reachability probe with one-line status summary |
 | `netdiff capture <target> [-o file.ndiff]` | Capture target network state to console or `.ndiff` snapshot |
-| `netdiff compare <good> <bad> [-v] [-j]` | Compare two snapshots and highlight causal differences |
-| `netdiff explain <good> <bad> [--ai] [--validate]` | Synthesize diagnostic explanation and recommended validation probe |
+| `netdiff compare <good> <bad> [-g] [-v] [-j]` | Compare two snapshots and highlight causal differences |
+| `netdiff graph <good> <bad> [--ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
+| `netdiff explain <good> <bad> [-g] [--ai] [--validate]` | Synthesize diagnostic explanation and recommended validation probe |
 | `netdiff report <good> <bad> [-o file] [--html]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff probe <name> [param] [-t <target>]` | Execute a bounded diagnostic validation probe |
