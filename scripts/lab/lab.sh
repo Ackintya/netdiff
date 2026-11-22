@@ -216,10 +216,11 @@ lab_cleanup() {
 }
 
 # 7. Verify scenario
+# Usage: lab_verify <scenario> [good_file]
 lab_verify() {
   local scenario="${1:-}"
+  local good_file="${2:-$OUTPUT_DIR/good.ndiff}"
   local bad_file="$OUTPUT_DIR/${scenario}.ndiff"
-  local good_file="$OUTPUT_DIR/good.ndiff"
 
   if [ ! -f "$good_file" ] || [ ! -f "$bad_file" ]; then
     echo "Error: Missing snapshot files for comparison ($good_file, $bad_file)" >&2
@@ -247,8 +248,9 @@ lab_verify() {
       ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_INTERFACE_STATE veth-client
       ;;
     route-missing)
-      echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_INTERFACE_STATE veth-client"
-      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_INTERFACE_STATE veth-client
+      echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_DIRECT_IP $SERVER_IP -t $TARGET_HOST"
+      # Interface is still UP after route deletion; validate reachability directly by IP instead.
+      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DIRECT_IP "$SERVER_IP" -t "$TARGET_HOST" || true
       ;;
     firewall-drop)
       echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_DIRECT_IP $SERVER_IP -t $TARGET_HOST"
@@ -259,8 +261,9 @@ lab_verify() {
       ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DNS_WITH_RESOLVER "$SERVER_IP" -t "$TARGET_DNS" || true
       ;;
     port-closed)
-      echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_DIRECT_IP $SERVER_IP -t 10.10.0.2:8081"
-      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DIRECT_IP "$SERVER_IP" -t "10.10.0.2:8081" || true
+      echo "Running: ip netns exec $CLIENT_NS netdiff probe TEST_DIRECT_IP $SERVER_IP -t $TARGET_HOST"
+      # Server was killed; probe confirms host reachable but port 8080 is now actively refused.
+      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" probe TEST_DIRECT_IP "$SERVER_IP" -t "$TARGET_HOST" || true
       ;;
   esac
 }
@@ -286,18 +289,28 @@ lab_run_all() {
     echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 
     lab_restore
+
+    # For the DNS scenario, capture the working baseline before changing the resolver.
+    if [ "$s" = "dns-failure" ]; then
+      echo "Capturing DNS-target baseline before fault injection..."
+      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" capture "$TARGET_DNS" -o "$OUTPUT_DIR/good-dns.ndiff" 2>/dev/null || true
+    fi
+
     lab_inject "$s"
 
     local target="$TARGET_HOST"
     if [ "$s" = "dns-failure" ]; then
       target="$TARGET_DNS"
-      # For dns baseline:
-      ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" capture "$TARGET_DNS" -o "$OUTPUT_DIR/good-dns.ndiff" 2>/dev/null || true
       lab_capture "$s" "$TARGET_DNS"
-      lab_verify "$s"
+      lab_verify "$s" "$OUTPUT_DIR/good-dns.ndiff"
     elif [ "$s" = "port-closed" ]; then
-      target="10.10.0.2:$CLOSED_PORT"
-      lab_capture "$s" "$target"
+      # Kill the HTTP server so port 8080 is now actively refused (same target as good.ndiff).
+      if [ -f "$PID_SERVER" ]; then
+        kill "$(cat "$PID_SERVER")" 2>/dev/null || true
+        rm -f "$PID_SERVER"
+      fi
+      sleep 0.5
+      lab_capture "$s" "$TARGET_HOST"
       lab_verify "$s"
     else
       lab_capture "$s" "$TARGET_HOST"
