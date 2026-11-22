@@ -192,4 +192,18 @@ func TestPrintCheck(t *testing.T) {
 	if !strings.Contains(buf.String(), "unreachable") {
 		t.Errorf("expected unreachable, got %s", buf.String())
 	}
+
+	buf.Reset()
+	snapTLSBad := &model.Snapshot{
+		Target: model.Target{Raw: "api.corp:443", Host: "api.corp", Port: 443, Protocol: "https"},
+		TCP:    &model.TCPReport{Status: model.TCPStatusConnected},
+		TLS: &model.TLSReport{
+			HandshakeSuccess: false,
+			Error:            "x509: certificate signed by unknown authority",
+		},
+	}
+	p.PrintCheck(snapTLSBad)
+	if !strings.Contains(buf.String(), "tls_failed") {
+		t.Errorf("expected tls_failed, got %s", buf.String())
+	}
 }

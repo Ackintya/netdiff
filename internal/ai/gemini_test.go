@@ -373,3 +373,53 @@ func TestExplain_NeighborARPDivergence(t *testing.T) {
 		t.Errorf("expected hypothesis title to mention ARP, got: %s", explanation.Hypotheses[0].Title)
 	}
 }
+
+func TestExplain_TLSCertificateDivergence(t *testing.T) {
+	reasoner := NewReasoner()
+	report := &model.ComparisonReport{
+		Target: model.Target{Raw: "api.internal.corp:443", Host: "api.internal.corp", Port: 443, Protocol: "https"},
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "eth0", Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+			TLS: &model.TLSReport{
+				HandshakeSuccess: true,
+				Version:          "TLS 1.3",
+			},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{EgressInterface: "eth0", Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+			TLS: &model.TLSReport{
+				HandshakeSuccess: false,
+				Error:            "x509: certificate signed by unknown authority",
+				ErrorCategory:    "untrusted_root",
+			},
+		},
+		Differences: []model.Difference{
+			{
+				Category:     "TLS",
+				Field:        "tls_handshake",
+				WorkingValue: "success (TLS 1.3)",
+				FailingValue: "failed (x509: certificate signed by unknown authority)",
+				Relevance:    model.RelevanceHigh,
+			},
+		},
+	}
+
+	explanation, err := reasoner.Explain(context.Background(), report, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !strings.Contains(explanation.Summary, "TLS certificate") {
+		t.Errorf("expected summary to mention TLS certificate, got: %s", explanation.Summary)
+	}
+
+	if len(explanation.Hypotheses) == 0 {
+		t.Fatal("expected hypotheses for TLS failure")
+	}
+
+	if !strings.Contains(explanation.Hypotheses[0].Title, "Root CA") {
+		t.Errorf("expected hypothesis to mention Root CA, got: %s", explanation.Hypotheses[0].Title)
+	}
+}

@@ -408,6 +408,46 @@ func TestNeighborARPFailureDivergence(t *testing.T) {
 	}
 }
 
+func TestTLSDivergenceScenario(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "api.corp:443", Host: "api.corp", Port: 443, Protocol: "https"},
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusConnected},
+		TLS: &model.TLSReport{
+			HandshakeSuccess: true,
+			Version:          "TLS 1.3",
+			CipherSuite:      "TLS_AES_128_GCM_SHA256",
+			Issuer:           "Let's Encrypt",
+		},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP:    &model.TCPReport{Status: model.TCPStatusConnected},
+		TLS: &model.TLSReport{
+			HandshakeSuccess: false,
+			Error:            "x509: certificate signed by unknown authority",
+			ErrorCategory:    "untrusted_root",
+		},
+	}
+
+	report := Compare(good, bad)
+	var foundTLSDiff bool
+	for _, d := range report.Differences {
+		if d.Category == "TLS" && d.Field == "tls_handshake" && d.Relevance == model.RelevanceHigh {
+			foundTLSDiff = true
+			if !containsSubstr(d.Rationale, "untrusted") {
+				t.Errorf("expected rationale to mention untrusted authority, got: %s", d.Rationale)
+			}
+		}
+	}
+
+	if !foundTLSDiff {
+		t.Fatal("expected HIGH relevance TLS handshake diff")
+	}
+}
+
 func containsSubstr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || (len(s) > 0 && len(sub) > 0 && stringsContains(s, sub)))
 }

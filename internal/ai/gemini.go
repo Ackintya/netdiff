@@ -378,6 +378,65 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			Reason:    "Validate whether the next-hop IP responds to direct IP ICMP/ping or if Layer 2 is completely unmapped.",
 		}
 
+	case "TLS":
+		fTLS := report.FailingSnapshot.TLS
+		errStr := "handshake failed"
+		errCat := "handshake_failed"
+		if fTLS != nil && fTLS.Error != "" {
+			errStr = fTLS.Error
+			errCat = fTLS.ErrorCategory
+		}
+
+		switch errCat {
+		case "untrusted_root":
+			result.Summary = fmt.Sprintf("TLS certificate verification failure for %s. TCP connection succeeded, but TLS handshake failed because the certificate authority is untrusted on the failing host: %s.", report.Target.Raw, errStr)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "Missing Root CA in System Trust Store",
+					SupportLevel: "strong",
+					Rationale:    "The endpoint presented a certificate signed by an authority missing from the failing host's CA trust store. This commonly happens in minimal container images missing ca-certificates or private internal PKI roots.",
+				},
+				{
+					Title:        "Self-Signed or Custom CA Certificate",
+					SupportLevel: "moderate",
+					Rationale:    "If the endpoint uses a self-signed certificate, the client requires explicit CA bundle configuration.",
+				},
+			}
+		case "expired":
+			result.Summary = fmt.Sprintf("TLS certificate expired for %s. TCP transport succeeded, but TLS validation rejected the expired certificate: %s.", report.Target.Raw, errStr)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "Expired TLS Certificate on Endpoint",
+					SupportLevel: "strong",
+					Rationale:    fmt.Sprintf("The TLS certificate served by %s has expired and fails standard x509 validation.", report.Target.Raw),
+				},
+			}
+		case "hostname_mismatch":
+			result.Summary = fmt.Sprintf("TLS certificate hostname mismatch for %s. TCP connection succeeded, but the certificate does not match requested host: %s.", report.Target.Raw, errStr)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "Certificate Subject Alternative Name (SAN) Mismatch",
+					SupportLevel: "strong",
+					Rationale:    fmt.Sprintf("The certificate presented by the server does not cover hostname %q.", report.Target.Host),
+				},
+			}
+		default:
+			result.Summary = fmt.Sprintf("TLS handshake failure for %s. Bidirectional TCP transport succeeded, but TLS negotiation failed: %s.", report.Target.Raw, errStr)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "TLS Protocol Version or Cipher Suite Mismatch",
+					SupportLevel: "strong",
+					Rationale:    fmt.Sprintf("Client and server failed to negotiate a mutually supported TLS version or cipher suite: %s.", errStr),
+				},
+			}
+		}
+
+		result.NextBestProbe = &DiagnosticProbeChoice{
+			ProbeName: "TEST_DIRECT_IP",
+			Parameter: report.Target.Host,
+			Reason:    "Validate direct IP reachability without TLS to isolate application transport from encryption handshake.",
+		}
+
 	default:
 		result.Summary = fmt.Sprintf("Network divergence detected in %s (%s vs %s). This path divergence directly accounts for observed TCP outcome (%s).",
 			primary.Category, primary.WorkingValue, primary.FailingValue, fTCP)

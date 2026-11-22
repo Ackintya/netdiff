@@ -257,7 +257,7 @@ func runDiagnose(args []string) {
 		renderProbeAssessment(explanation.NextBestProbe.ProbeName, res)
 	}
 
-	if currSnap.TCP != nil && currSnap.TCP.Status != model.TCPStatusConnected {
+	if (currSnap.TCP != nil && currSnap.TCP.Status != model.TCPStatusConnected) || (currSnap.TLS != nil && !currSnap.TLS.HandshakeSuccess) {
 		os.Exit(1)
 	}
 }
@@ -287,7 +287,7 @@ func runCheck(args []string) {
 	p := printer.New()
 	p.PrintCheck(snap)
 
-	if snap.TCP == nil || snap.TCP.Status != model.TCPStatusConnected {
+	if snap.TCP == nil || snap.TCP.Status != model.TCPStatusConnected || (snap.TLS != nil && !snap.TLS.HandshakeSuccess) {
 		os.Exit(1)
 	}
 }

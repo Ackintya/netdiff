@@ -155,3 +155,49 @@ func TestDAGEarliestDivergenceNeighbor(t *testing.T) {
 		t.Fatalf("expected earliest divergence to be %s, got %s", NodeNeighbor, d.EarliestDivergence.Type)
 	}
 }
+
+func TestDAGEarliestDivergenceTLS(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Host: "api.corp", Port: 443, Protocol: "https"},
+		Route: &model.RouteReport{
+			DestinationIP:   "10.10.0.2",
+			Table:           254,
+			TableName:       "main",
+			EgressInterface: "eth0",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+		TLS: &model.TLSReport{
+			HandshakeSuccess: true,
+			Version:          "TLS 1.3",
+			CipherSuite:      "TLS_AES_128_GCM_SHA256",
+			Subject:          "api.corp",
+		},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route: &model.RouteReport{
+			DestinationIP:   "10.10.0.2",
+			Table:           254,
+			TableName:       "main",
+			EgressInterface: "eth0",
+			Success:         true,
+		},
+		TCP: &model.TCPReport{Status: model.TCPStatusConnected},
+		TLS: &model.TLSReport{
+			HandshakeSuccess: false,
+			Error:            "x509: certificate signed by unknown authority",
+			ErrorCategory:    "untrusted_root",
+		},
+	}
+
+	d := BuildDAG(good, bad)
+	if d == nil || d.EarliestDivergence == nil {
+		t.Fatal("expected earliest divergence")
+	}
+
+	if d.EarliestDivergence.Type != NodeTLS {
+		t.Fatalf("expected earliest divergence to be %s, got %s", NodeTLS, d.EarliestDivergence.Type)
+	}
+}

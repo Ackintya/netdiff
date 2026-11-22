@@ -13,6 +13,10 @@ type Target struct {
 	IsIP     bool   `json:"is_ip"`
 }
 
+func (t Target) IsTLS() bool {
+	return t.Port == 443 || t.Port == 8443 || t.Protocol == "https" || t.Protocol == "tls"
+}
+
 // DNSReport captures resolution metrics and output for the target hostname.
 type DNSReport struct {
 	Hostname     string   `json:"hostname"`
@@ -106,6 +110,21 @@ type FirewallReport struct {
 	Active  bool   `json:"active"`
 }
 
+// TLSReport captures TLS handshake negotiation and certificate validation details.
+type TLSReport struct {
+	HandshakeSuccess bool     `json:"handshake_success"`
+	Version          string   `json:"version,omitempty"`        // e.g. "TLS 1.3", "TLS 1.2"
+	CipherSuite      string   `json:"cipher_suite,omitempty"`   // e.g. "TLS_AES_128_GCM_SHA256"
+	ServerName       string   `json:"server_name,omitempty"`    // SNI used
+	Issuer           string   `json:"issuer,omitempty"`         // Common Name / Org of issuer
+	Subject          string   `json:"subject,omitempty"`        // Common Name / Org of cert
+	DNSNames         []string `json:"dns_names,omitempty"`      // SANs
+	Expiry           string   `json:"expiry,omitempty"`         // RFC3339 formatted expiration
+	DaysUntilExpiry  int      `json:"days_until_expiry,omitempty"`
+	Error            string   `json:"error,omitempty"`          // Detailed error string
+	ErrorCategory    string   `json:"error_category,omitempty"` // "untrusted_root", "expired", "hostname_mismatch", "protocol_version", "handshake_failed"
+}
+
 // Snapshot is the portable .ndiff file structure containing all relevant network state.
 type Snapshot struct {
 	SchemaVersion    string           `json:"schema_version"`
@@ -116,6 +135,7 @@ type Snapshot struct {
 	Interface        *InterfaceReport `json:"interface,omitempty"`
 	Neighbor         *NeighborReport  `json:"neighbor,omitempty"`
 	TCP              *TCPReport       `json:"tcp,omitempty"`
+	TLS              *TLSReport       `json:"tls,omitempty"`
 	Proxy            *ProxyReport     `json:"proxy,omitempty"`
 	Firewall         *FirewallReport  `json:"firewall,omitempty"`
 	CollectionErrors []string         `json:"collection_errors,omitempty"`

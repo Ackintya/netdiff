@@ -90,7 +90,7 @@ CLI Output    Web Dashboard    Markdown Report
 1. **Target-Bounded State Collection**: Rather than dumping entire system configurations, NetDiff only queries the state relevant to the specified destination: kernel FIB route lookup (`ip route get`), matching policy routing rules (`ip rule`), egress link state, MTU, ARP neighbor entries, and TCP dial results.
 2. **Semantic Normalization**: Eliminates dynamic noise such as ephemeral ports, interface index numbers, and loopback variations across hosts.
 3. **Evidence Dependency Graph (DAG)**: NetDiff models the packet path as a sequence:
-   $$\text{Hostname} \rightarrow \text{DNS} \rightarrow \text{Destination IP} \rightarrow \text{Policy Rule} \rightarrow \text{Route Table} \rightarrow \text{Route Lookup} \rightarrow \text{Gateway/Src/Iface} \rightarrow \text{Neighbor ARP} \rightarrow \text{MTU} \rightarrow \text{TCP}$$
+   $$\text{Hostname} \rightarrow \text{DNS} \rightarrow \text{Destination IP} \rightarrow \text{Policy Rule} \rightarrow \text{Route Table} \rightarrow \text{Route Lookup} \rightarrow \text{Gateway/Src/Iface} \rightarrow \text{Neighbor ARP} \rightarrow \text{MTU} \rightarrow \text{TCP} \rightarrow \text{TLS Handshake}$$
    The earliest divergent node along this dependency chain represents the primary path divergence.
 4. **Relevance Scoring**: Differences are ranked by causal probability. For instance, if a TCP connection encounters `ECONNREFUSED` (TCP RST), the path is fully reachable, and routing differences are downgraded in relevance.
 5. **Deterministic Diagnostics**: Explanations operate completely offline without external API dependencies. Optional LLM synthesis (`--ai`) is bounded by the same structured evidence.
@@ -110,6 +110,7 @@ NetDiff is designed to accurately identify and distinguish between common networ
 | **DNS Misconfiguration** | Resolution failure; transport unattempted | DNS resolution failure isolated upstream of IP routing | `TEST_DNS_WITH_RESOLVER` |
 | **TCP Port Closed** | TCP connection refused (`ECONNREFUSED` / RST) | Full network reachability confirmed; endpoint service is down | `TEST_DIRECT_IP` |
 | **Gateway ARP Unresolved** | TCP timeout / unreachable; route & interface UP | Layer 2 neighbor resolution failed (`INCOMPLETE`/`FAILED`); isolates framing failure from routing | `TEST_DIRECT_IP` |
+| **TLS / Certificate Error** | TCP connects; TLS handshake fails (untrusted/expired) | Handshake failure isolated downstream of TCP; diagnoses missing root CA or expired cert | `TEST_DIRECT_IP` |
 
 ---
 

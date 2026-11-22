@@ -302,6 +302,22 @@ func (p *Printer) PrintCapturePath(snap *model.Snapshot) {
 		p.printPathRow("TCP", ColorRed, "✗", fmt.Sprintf("%s (%s)", snap.TCP.Status, errStr))
 	}
 
+	// TLS Layer (if target is TLS-enabled or TLS collected)
+	if snap.TLS != nil {
+		if snap.TLS.HandshakeSuccess {
+			expiryStr := ""
+			if snap.TLS.DaysUntilExpiry != 0 {
+				expiryStr = fmt.Sprintf(", expires in %dd", snap.TLS.DaysUntilExpiry)
+			}
+			detail := fmt.Sprintf("✓ %s  %s  (issuer: %s%s)", snap.TLS.Version, snap.TLS.CipherSuite, snap.TLS.Issuer, expiryStr)
+			p.printPathRow("TLS", ColorGreen, "●", detail)
+		} else {
+			p.printPathRow("TLS", ColorRed, "✗", fmt.Sprintf("handshake failed: %s", snap.TLS.Error))
+		}
+	} else if snap.Target.IsTLS() {
+		p.printPathRow("TLS", ColorMuted, "●", "not completed (TCP did not connect)")
+	}
+
 	if len(snap.CollectionErrors) > 0 {
 		fmt.Fprintf(p.Out, "\n  %sWarnings:%s\n", ColorYellow, ColorReset)
 		for _, w := range snap.CollectionErrors {
@@ -425,6 +441,9 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 	ifaceStatus := "Interface"
 	arpStatus := "ARP"
 	tcpStatus := "TCP"
+	tlsStatus := "TLS"
+
+	isTLS := comp.Target.IsTLS() || (comp.WorkingSnapshot != nil && comp.WorkingSnapshot.TLS != nil) || (comp.FailingSnapshot != nil && comp.FailingSnapshot.TLS != nil)
 
 	f := comp.FailingSnapshot
 	if f != nil {
@@ -443,6 +462,9 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 		if f.TCP != nil && f.TCP.Status != model.TCPStatusConnected {
 			tcpStatus = "TCP✗"
 		}
+		if f.TLS != nil && !f.TLS.HandshakeSuccess {
+			tlsStatus = "TLS✗"
+		}
 	}
 
 	for _, d := range comp.Differences {
@@ -458,6 +480,8 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 				arpStatus = "ARP✗"
 			case "TCP":
 				tcpStatus = "TCP✗"
+			case "TLS":
+				tlsStatus = "TLS✗"
 			}
 		}
 	}
@@ -469,14 +493,26 @@ func (p *Printer) printPathChain(comp *model.ComparisonReport) {
 		return ColorGreen + label + ColorReset
 	}
 
-	fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s → %s\n\n",
-		ColorBold, ColorReset,
-		colorize(dnsStatus),
-		colorize(routeStatus),
-		colorize(ifaceStatus),
-		colorize(arpStatus),
-		colorize(tcpStatus),
-	)
+	if isTLS {
+		fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s → %s → %s\n\n",
+			ColorBold, ColorReset,
+			colorize(dnsStatus),
+			colorize(routeStatus),
+			colorize(ifaceStatus),
+			colorize(arpStatus),
+			colorize(tcpStatus),
+			colorize(tlsStatus),
+		)
+	} else {
+		fmt.Fprintf(p.Out, "  %sPATH CHAIN:%s  %s → %s → %s → %s → %s\n\n",
+			ColorBold, ColorReset,
+			colorize(dnsStatus),
+			colorize(routeStatus),
+			colorize(ifaceStatus),
+			colorize(arpStatus),
+			colorize(tcpStatus),
+		)
+	}
 }
 
 // PrintCheck renders a single-line reachability summary.
@@ -486,6 +522,13 @@ func (p *Printer) PrintCheck(snap *model.Snapshot) {
 		return
 	}
 	tgt := snap.Target.Raw
+
+	// Check TLS failure first if target is TLS
+	if snap.TLS != nil && !snap.TLS.HandshakeSuccess {
+		fmt.Fprintf(p.Out, "%s✗%s  %-22s tls_failed   (%s)\n",
+			ColorRed, ColorReset, tgt, snap.TLS.Error)
+		return
+	}
 
 	if snap.TCP != nil && snap.TCP.Status == model.TCPStatusConnected {
 		egress := "unknown"
@@ -503,8 +546,12 @@ func (p *Printer) PrintCheck(snap *model.Snapshot) {
 		if snap.TCP.RemoteIP != "" {
 			remote = fmt.Sprintf("%s:%d", snap.TCP.RemoteIP, snap.TCP.RemotePort)
 		}
-		fmt.Fprintf(p.Out, "%s✓%s  %-22s connected    %s→%s  via %s  (%dms)\n",
-			ColorGreen, ColorReset, tgt, local, remote, egress, snap.TCP.LatencyMs)
+		connLabel := "connected"
+		if snap.TLS != nil && snap.TLS.HandshakeSuccess {
+			connLabel = fmt.Sprintf("connected [%s]", snap.TLS.Version)
+		}
+		fmt.Fprintf(p.Out, "%s✓%s  %-22s %-16s %s→%s  via %s  (%dms)\n",
+			ColorGreen, ColorReset, tgt, connLabel, local, remote, egress, snap.TCP.LatencyMs)
 		return
 	}
 

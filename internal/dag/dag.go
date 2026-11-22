@@ -21,6 +21,7 @@ const (
 	NodeMTU             NodeType = "MTU"
 	NodeNeighbor        NodeType = "Neighbor ARP"
 	NodeTCP             NodeType = "TCP Connection"
+	NodeTLS             NodeType = "TLS Handshake"
 	NodeRouteLookup     NodeType = "Route Lookup"
 )
 
@@ -183,6 +184,20 @@ func BuildDAG(working, failing *model.Snapshot) *DAG {
 	d.Root = nHostname
 	d.Nodes = []*Node{nHostname, nDNS, nDest, nRule, nTable, nLookup, nGw, nSrc, nIface, nNeigh, nMTU, nTCP}
 
+	// 12. Optional TLS Handshake (for TLS-enabled targets)
+	if working.Target.IsTLS() || (working.TLS != nil || failing.TLS != nil) {
+		wTLS := formatTLS(working.TLS)
+		fTLS := formatTLS(failing.TLS)
+		nTLS := &Node{
+			Type:        NodeTLS,
+			WorkingVal:  wTLS,
+			FailingVal:  fTLS,
+			IsDivergent: wTLS != fTLS,
+		}
+		nTCP.Children = []*Node{nTLS}
+		d.Nodes = append(d.Nodes, nTLS)
+	}
+
 	// Find the earliest divergent node in order of propagation
 	for _, n := range d.Nodes {
 		if n.IsDivergent && n.Type != NodeHostname && n.Type != NodeTCP {
@@ -309,4 +324,21 @@ func formatNeighbor(n *model.NeighborReport) string {
 		return fmt.Sprintf("%s (%s)", n.IP, n.MAC)
 	}
 	return n.IP
+}
+
+func formatTLS(t *model.TLSReport) string {
+	if t == nil {
+		return "none"
+	}
+	if !t.HandshakeSuccess {
+		if t.ErrorCategory != "" {
+			return fmt.Sprintf("failed (%s: %s)", t.ErrorCategory, t.Error)
+		}
+		return fmt.Sprintf("failed (%s)", t.Error)
+	}
+	cert := ""
+	if t.Subject != "" {
+		cert = fmt.Sprintf(" [%s]", t.Subject)
+	}
+	return fmt.Sprintf("%s%s", t.Version, cert)
 }

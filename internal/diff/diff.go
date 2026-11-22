@@ -61,6 +61,10 @@ func Compare(workingRaw, failingRaw *model.Snapshot) *model.ComparisonReport {
 	fwDiffs := diffFirewall(working.Firewall, failing.Firewall)
 	diffs = append(diffs, fwDiffs...)
 
+	// 8. TLS Handshake Diff
+	tlsDiffs := diffTLS(working.TLS, failing.TLS)
+	diffs = append(diffs, tlsDiffs...)
+
 	// Score and refine relevance based on the observed TCP symptom and causal graph
 	report.Differences = evaluateRelevance(diffs, working, failing)
 	report.Summary = generateSummary(report)
@@ -505,5 +509,88 @@ func diffFirewall(w, f *model.FirewallReport) []model.Difference {
 			Rationale:      "Host firewall packet filtering is active on one environment and may drop connection attempts.",
 		})
 	}
+	return diffs
+}
+
+func diffTLS(w, f *model.TLSReport) []model.Difference {
+	var diffs []model.Difference
+	if w == nil && f == nil {
+		return diffs
+	}
+
+	if w != nil && f == nil {
+		diffs = append(diffs, model.Difference{
+			Category:       "TLS",
+			Field:          "tls_handshake",
+			WorkingValue:   fmt.Sprintf("success (%s)", w.Version),
+			FailingValue:   "not_performed",
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "TLS Handshake",
+			Rationale:      "TLS handshake was successful in working environment but not completed in failing environment.",
+		})
+		return diffs
+	}
+
+	if w == nil && f != nil {
+		return diffs
+	}
+
+	if w.HandshakeSuccess != f.HandshakeSuccess {
+		wVal := fmt.Sprintf("success (%s)", w.Version)
+		if !w.HandshakeSuccess {
+			wVal = fmt.Sprintf("failed (%s)", w.Error)
+		}
+		fVal := fmt.Sprintf("success (%s)", f.Version)
+		if !f.HandshakeSuccess {
+			fVal = fmt.Sprintf("failed (%s)", f.Error)
+		}
+
+		rationale := "TLS handshake succeeded on working environment but failed on failing environment."
+		if f.ErrorCategory == "untrusted_root" {
+			rationale = fmt.Sprintf("TLS certificate authority is untrusted on failing host (%s). Missing root CA in system trust store.", f.Error)
+		} else if f.ErrorCategory == "expired" {
+			rationale = fmt.Sprintf("TLS certificate expired on failing host (%s).", f.Error)
+		} else if f.ErrorCategory == "hostname_mismatch" {
+			rationale = fmt.Sprintf("TLS certificate Subject/SAN does not match hostname on failing host (%s).", f.Error)
+		} else if f.Error != "" {
+			rationale = fmt.Sprintf("TLS handshake failed: %s.", f.Error)
+		}
+
+		diffs = append(diffs, model.Difference{
+			Category:       "TLS",
+			Field:          "tls_handshake",
+			WorkingValue:   wVal,
+			FailingValue:   fVal,
+			Relevance:      model.RelevanceHigh,
+			DependencyNode: "TLS Handshake",
+			Rationale:      rationale,
+		})
+		return diffs
+	}
+
+	if w.Version != f.Version && w.Version != "" && f.Version != "" {
+		diffs = append(diffs, model.Difference{
+			Category:       "TLS",
+			Field:          "tls_version",
+			WorkingValue:   w.Version,
+			FailingValue:   f.Version,
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "TLS Handshake",
+			Rationale:      "Negotiated TLS protocol version differs.",
+		})
+	}
+
+	if w.CipherSuite != f.CipherSuite && w.CipherSuite != "" && f.CipherSuite != "" {
+		diffs = append(diffs, model.Difference{
+			Category:       "TLS",
+			Field:          "cipher_suite",
+			WorkingValue:   w.CipherSuite,
+			FailingValue:   f.CipherSuite,
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "TLS Handshake",
+			Rationale:      "Negotiated TLS cipher suite differs.",
+		})
+	}
+
 	return diffs
 }

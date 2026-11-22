@@ -14,6 +14,7 @@ import (
 	"netdiff/internal/collector/route"
 	"netdiff/internal/collector/rule"
 	"netdiff/internal/collector/tcp"
+	"netdiff/internal/collector/tls"
 	"netdiff/pkg/model"
 	"netdiff/pkg/version"
 )
@@ -30,6 +31,7 @@ type Engine struct {
 	ifaceCollector    iface.Collector
 	neighborCollector neighbor.Collector
 	tcpCollector      *tcp.Collector
+	tlsCollector      *tls.Collector
 	proxyCollector    *proxy.Collector
 	firewallCollector firewall.Collector
 }
@@ -42,6 +44,7 @@ func NewEngine() *Engine {
 		ifaceCollector:    iface.New(),
 		neighborCollector: neighbor.New(),
 		tcpCollector:      tcp.New(5 * time.Second),
+		tlsCollector:      tls.New(5 * time.Second),
 		proxyCollector:    proxy.New(),
 		firewallCollector: firewall.New(),
 	}
@@ -135,6 +138,16 @@ func (e *Engine) Capture(ctx context.Context, target model.Target) (*model.Snaps
 		snapshot.CollectionErrors = append(snapshot.CollectionErrors, "tcp: "+err.Error())
 	} else {
 		snapshot.TCP = tReport
+	}
+
+	// 7. TLS Handshake Probe (if target is TLS-enabled and TCP connected)
+	if target.IsTLS() && tReport != nil && tReport.Status == model.TCPStatusConnected {
+		tlsReport, err := e.tlsCollector.Collect(ctx, target, destIP)
+		if err != nil {
+			snapshot.CollectionErrors = append(snapshot.CollectionErrors, "tls: "+err.Error())
+		} else {
+			snapshot.TLS = tlsReport
+		}
 	}
 
 	return snapshot, nil
