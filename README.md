@@ -1,86 +1,189 @@
-# NetDiff
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner.svg">
+    <img src="assets/banner.svg" alt="NetDiff Banner" width="100%">
+  </picture>
+</p>
 
-> Explain why a network connection works in one environment and fails in another.
+<p align="center">
+  <a href="https://golang.org"><img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go Version"></a>
+  <a href="https://github.com/Ackintya/netdiff/actions"><img src="https://img.shields.io/badge/CI-Passing-00E676?style=flat-square&logo=githubactions&logoColor=white" alt="CI Status"></a>
+  <a href="https://aistudio.google.com"><img src="https://img.shields.io/badge/AI-Google%20Gemini%202.5-4285F4?style=flat-square&logo=google&logoColor=white" alt="Gemini Powered"></a>
+  <img src="https://img.shields.io/badge/Architecture-Causal%20DAG-00E5FF?style=flat-square" alt="Causal DAG">
+  <img src="https://img.shields.io/badge/Mode-100%25%20Offline%20First-BA68C8?style=flat-square" alt="Offline First">
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS%20%7C%20Windows-333333?style=flat-square" alt="Platform Support">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License"></a>
+</p>
 
-NetDiff is a Linux network troubleshooting tool designed to isolate the root cause of connection failures across environments. 
-
-Instead of manually running dozens of disconnected commands (`ip route`, `ip rule`, `iptables`, `resolvectl`, `ss`, `ip link`) and guessing which difference matters, NetDiff captures target-specific network state into portable `.ndiff` snapshots, models the connection as a dependency graph, and isolates the earliest divergence responsible for the failure.
+<p align="center">
+  <strong>NetDiff explains why a network connection works in one environment and fails in another.</strong><br>
+  Capture target-specific state into portable snapshots, model connections as a causal dependency graph, and pinpoint the earliest root-cause divergence in seconds.
+</p>
 
 ---
 
-## Workflow
+## The Problem: "It worked on my machine... why does it fail in staging?"
 
-### Single-Command Diagnosis (Recommended)
+Debugging intermittent network drops, misordered policy rules, missing container routes, or firewall timeouts across environments is frustrating:
 
-Diagnose target connectivity against an automatically managed baseline:
+| The Traditional Way | The NetDiff Way |
+|---|---|
+| Run 15 disjointed CLI commands (`ip route`, `ip rule`, `iptables`, `resolvectl`, `ss`, `ip link`, `arp`, `openssl`). | Run **one command**: `netdiff diagnose api.internal:443` or compare snapshots. |
+| Get overwhelmed by hundreds of lines of configuration noise that have nothing to do with the failure. | NetDiff scopes queries **strictly to the target** and filters out ephemeral ports and index noise. |
+| Guess which difference actually broke the connection. | Models the packet path as a **Causal DAG** and points directly to the earliest divergence. |
+| Wonder how to safely fix the issue. | Generates an **Actionable Remediation Playbook** with copyable Bash, Netplan config, and verification. |
+| Copy-paste raw configs into an LLM and risk hallucination. | Ask `netdiff ask "<question>"` grounded **strictly in verified kernel facts**. |
 
+---
+
+## 30-Second Quickstart
+
+### 1. Single-Command Diagnosis (Baseline Workflow)
+When your service is working, capture your baseline:
 ```bash
-# First run records baseline snapshot (when network is working):
-netdiff diagnose 10.10.0.2:8080
-
-# Subsequent run compares against baseline and provides immediate diagnosis:
-netdiff diagnose 10.10.0.2:8080
-
-# Fast reachability check with one-line status:
-netdiff check 10.10.0.2:8080
+# Capture working baseline (saved automatically to ~/.netdiff/baselines/)
+netdiff diagnose api.internal.corp:443
+```
+When something breaks later, run the exact same command to get an instant root-cause analysis:
+```bash
+netdiff diagnose api.internal.corp:443
 ```
 
-### AI Reasoning Setup (1-Command Setup)
-
-NetDiff integrates Google Gemini to synthesize multi-layered root-cause diagnoses, generate verified remediation playbooks, and answer natural language debugging questions (`netdiff ask`).
-
-Save your free Gemini API key once to activate AI across all commands:
+### 2. Cross-Host Snapshot Comparison
+Compare two environments (e.g. laptop vs staging container):
 ```bash
-# 1. Get a free key in 10 seconds: https://aistudio.google.com/app/apikey
-# 2. Save it once (persisted securely to ~/.netdiff/config.json):
+# Host A (working):
+netdiff capture api.internal.corp:443 -o good.ndiff
+
+# Host B (failing):
+netdiff capture api.internal.corp:443 -o bad.ndiff
+
+# Compare and render the causal dependency graph:
+netdiff graph good.ndiff bad.ndiff
+```
+
+---
+
+## Visual Terminal Previews
+
+### 1. Terminal Causal Dependency Graph (`netdiff graph`)
+Visualizes the physical and logical packet journey, pointing straight to the root cause:
+
+```text
+=== NetDiff Causal Dependency Graph ===
+Target: api.internal.company:443 (port: 443, proto: tcp)
+Path:   [WORKING] DEVELOPER-LAPTOP-WORKING  vs  [FAILING] DEVELOPER-WORKSTATION-FAILING
+Legend: ● Match   ✗ Divergent   ◄── Earliest Divergence (Root Cause)
+──────────────────────────────────────────────────────────────────────────
+
+● [1] Target Hostname        [MATCH] api.internal.company
+  │
+  ▼
+● [2] DNS Resolution         [MATCH] 10.40.8.21
+  │
+  ▼
+● [3] Destination IP         [MATCH] 10.40.8.21
+  │
+  ▼
+✗ [4] Policy Routing (ip rule) [DIVERGENT] from all to 10.40.0.0/16 lookup 200 ≠ main ◄── ROOT CAUSE
+  │  ├── ✗ Routing Table        table 200 (table 200) ≠ table 254 (main)
+  │  ├── ● FIB Route Lookup     success (route found)
+  │  ├── ✗ Egress Interface     tun0 ≠ eth0
+  │  ├── ✗ Next-Hop Gateway     10.8.0.1 ≠ 192.168.1.1
+  │  └── ✗ Source IP Selected   10.8.0.14 ≠ 192.168.1.84
+  │
+  ▼
+● [5] Neighbor ARP/NDP       [MATCH] none
+  │
+  ▼
+✗ [6] Interface MTU & Link   [DIVERGENT] 1420 bytes (oper: up) ≠ 1500 bytes (oper: up)
+  │
+  ▼
+✗ [7] TCP Connection         [DIVERGENT] connected (27ms) ≠ timeout
+  │
+  ▼
+● [8] TLS Handshake          [MATCH] not performed
+──────────────────────────────────────────────────────────────────────────
+
+Actionable Remediation Playbook:
+  Immediate Fix:   $ sudo ip rule add to api.internal.company/32 lookup 200
+  Verification:    $ ip rule show | grep 200
+  Why:             Directs target traffic to table 200 via tun0 instead of fallback default eth0.
+```
+
+### 2. Conversational Q&A Grounded in Evidence (`netdiff ask`)
+Ask debugging questions directly in the terminal without losing context:
+```bash
+$ netdiff ask good.ndiff bad.ndiff "Why is this connection timing out?"
+
+  ╔══════════════════════════════════════════════════════════════════════╗
+  ║  NETDIFF INVESTIGATION  ·  api.internal.company:443                  ║
+  ╚══════════════════════════════════════════════════════════════════════╝
+
+  Question: "Why is this connection timing out?"
+
+  Evidence-Grounded Answer:
+  Based on NetDiff snapshot comparison for api.internal.company:443:
+  
+  ● Root Cause (Earliest Divergence): Policy Rule: from all to 10.40.0.0/16 lookup 200 != default main
+  ● Outcomes: Working=laptop (connected, 27ms), Failing=workstation (timeout)
+  
+  - [Policy] Failing host is missing the rule capturing traffic for 10.40.0.0/16 into table 200.
+  - [Route] Traffic drops into table 254 (main) and egresses physical interface eth0 instead of tun0.
+  - [Interface] Without the VPN tunnel encapsulation on tun0, intermediate routers drop the packet.
+```
+
+---
+
+## Key Capabilities
+
+### ⚡ 1. 100% Offline-First Engine with Optional Gemini AI
+NetDiff operates **completely offline** with zero external API requirements. Its built-in deterministic causal DAG engine analyzes path differences and outputs complete remediation playbooks locally.
+
+When you want generative AI synthesis:
+```bash
+# Save your free Gemini API key once:
 netdiff auth AIzaSy...
 
-# Check status anytime:
+# Check status:
 netdiff config show
 ```
-*(If no API key is configured, NetDiff automatically runs with its built-in local deterministic engine).*
+Once configured, NetDiff automatically activates Gemini reasoning across `explain`, `diagnose`, and `ask` with strict OpenAPI schema validation (`responseSchema`) to prevent hallucinations.
 
-### Manual Snapshot Workflow
-
-Capture and compare discrete snapshots across hosts or time:
-
+### 📊 2. Standalone Interactive HTML Reports
+Generate zero-dependency, self-contained HTML reports for Slack, Jira, or post-mortems:
 ```bash
-# 1. Capture target network state in the working environment:
-netdiff capture 10.10.0.2:8080 -o good.ndiff
+netdiff report good.ndiff bad.ndiff --html -o incident.html
+```
+* **Offline Capable**: All styles, icons, and comparison data are bundled into one file. Open it with any browser via `file://`.
+* **Interactive Inspector**: Click any stage on the visual DAG to inspect kernel socket telemetry (`TCP_INFO`), TLS certificates, and causal rationales.
+* **1-Click Copy**: Copy immediate Bash fixes directly to your clipboard.
 
-# 2. Capture target network state in the failing environment:
-netdiff capture 10.10.0.2:8080 -o bad.ndiff
-
-# 3. Compare snapshots or render the terminal causal DAG tree:
-netdiff compare good.ndiff bad.ndiff
-netdiff graph good.ndiff bad.ndiff
-
-# 4. Synthesize diagnostic explanation and actionable remediation:
-netdiff explain good.ndiff bad.ndiff
-
-# 5. Ask conversational debugging questions grounded in verified evidence:
-netdiff ask good.ndiff bad.ndiff "Why is the connection timing out?"
-netdiff ask good.ndiff bad.ndiff "How do I fix this issue?"
-
-# 6. Run the validation probe in the failing environment:
-netdiff probe TEST_INTERFACE_STATE veth-client
-
-# 7. (Optional) Generate a Markdown or standalone interactive HTML incident report:
-netdiff report good.ndiff bad.ndiff -o incident.md
-netdiff report good.ndiff bad.ndiff --html -o report.html
-
-# 8. (Optional) Launch the interactive browser visualizer:
+### 🖥️ 3. Interactive Web Dashboard (`netdiff ui`)
+Explore dual dependency DAGs side-by-side in your local browser:
+```bash
 netdiff ui good.ndiff bad.ndiff -p 8080
 ```
 
+### 🔍 4. Kernel TCP Socket Telemetry (`TCP_INFO`)
+Inspect socket internals that ping and traceroute miss:
+* Microsecond kernel RTT and RTT variance
+* Outbound packet retransmissions & total retransmits
+* Congestion window (`snd_cwnd`)
+* Path MTU (`pmtu`) discovery
+* Lost and dropped packet counters
+
 ---
 
-## How It Works
+## How It Works: The 10-Layer Causal Model
+
+NetDiff captures state strictly bounded to the target host and port, then models packet flow through the kernel's decision pipeline:
 
 ```text
 Target (host:port)
        │
- Probe Planner
+  Probe Planner
        │
  ┌─────┴───────────┬──────────────┐
  ▼                 ▼              ▼
@@ -99,109 +202,95 @@ Collector      Collector        Probe
        │
  ┌─────┴────────────────────────┐
  ▼                              ▼
-Deterministic Reasoning     Optional Gemini AI
+Deterministic Engine        Gemini AI Engine
  │                              │
  └─────┬────────────────────────┘
        ▼
- Diagnostic Explanation & Next-Best Probe
+ Diagnostic Explanation & Remediation Playbook
        │
  ┌─────┴───────────┬──────────────┐
  ▼                 ▼              ▼
-CLI Output    Web Dashboard    Markdown Report
+Terminal Graph   Web Dashboard  HTML Report
 ```
 
-1. **Target-Bounded State Collection**: Rather than dumping entire system configurations, NetDiff only queries the state relevant to the specified destination: kernel FIB route lookup (`ip route get`), matching policy routing rules (`ip rule`), egress link state, MTU, ARP neighbor entries, kernel TCP socket telemetry (`TCP_INFO`), and TLS handshake negotiation.
-2. **Semantic Normalization**: Eliminates dynamic noise such as ephemeral ports, interface index numbers, and loopback variations across hosts.
-3. **Evidence Dependency Graph (DAG)**: NetDiff models the packet path as a sequence:
-   $$\text{Hostname} \rightarrow \text{DNS} \rightarrow \text{Destination IP} \rightarrow \text{Policy Rule} \rightarrow \text{Route Table} \rightarrow \text{Route Lookup} \rightarrow \text{Gateway/Src/Iface} \rightarrow \text{Neighbor ARP} \rightarrow \text{MTU} \rightarrow \text{TCP} \rightarrow \text{TLS Handshake}$$
-   The earliest divergent node along this dependency chain represents the primary path divergence.
-4. **Relevance Scoring**: Differences are ranked by causal probability. For instance, if a TCP connection encounters `ECONNREFUSED` (TCP RST), the path is fully reachable, and routing differences are downgraded in relevance.
-5. **Deterministic Diagnostics**: Explanations operate completely offline without external API dependencies. Optional LLM synthesis (`--ai`) is bounded by the same structured evidence.
-6. **Closed-Loop Validation**: Recommended follow-up tests are selected strictly from a fixed catalog of safe validation probes.
+NetDiff evaluates divergence along the canonical dependency chain:
+$$\text{Hostname} \rightarrow \text{DNS} \rightarrow \text{Dest IP} \rightarrow \text{Policy Rule} \rightarrow \text{Route Table} \rightarrow \text{Egress Link} \rightarrow \text{ARP/Neighbor} \rightarrow \text{MTU} \rightarrow \text{TCP} \rightarrow \text{TLS}$$
+
+The **earliest divergent node** along this chain is identified as the root cause, filtering out downstream cascade symptoms.
 
 ---
 
 ## Diagnosed Failure Scenarios
 
-NetDiff is designed to accurately identify and distinguish between common network failure modes:
+NetDiff distinguishes between common real-world networking problems:
 
-| Scenario | Symptom Observed | NetDiff Diagnostic Finding | Recommended Probe |
+| Scenario | Observed Symptom | NetDiff Root Cause Finding | Actionable Remediation |
 |---|---|---|---|
-| **Interface Disabled** | `RTNETLINK: Network is unreachable`; TCP unreachable | Route lookup failure; identifies disabled interface | `TEST_INTERFACE_STATE` (returns DOWN) |
-| **Missing Route** | `RTNETLINK: Network is unreachable`; interface is UP | Route lookup failure; verifies interface is UP, isolating missing route | `TEST_INTERFACE_STATE` (returns UP) |
-| **Firewall Packet Drop** | TCP connect timeout; route & interface functional | Active packet filtering (`iptables`/`nftables`) identified during timeout | `TEST_DIRECT_IP` |
-| **DNS Misconfiguration** | Resolution failure; transport unattempted | DNS resolution failure isolated upstream of IP routing | `TEST_DNS_WITH_RESOLVER` |
-| **TCP Port Closed** | TCP connection refused (`ECONNREFUSED` / RST) | Full network reachability confirmed; endpoint service is down | `TEST_DIRECT_IP` |
-| **Gateway ARP Unresolved** | TCP timeout / unreachable; route & interface UP | Layer 2 neighbor resolution failed (`INCOMPLETE`/`FAILED`); isolates framing failure from routing | `TEST_DIRECT_IP` |
-| **TLS / Certificate Error** | TCP connects; TLS handshake fails (untrusted/expired) | Handshake failure isolated downstream of TCP; diagnoses missing root CA or expired cert | `TEST_DIRECT_IP` |
+| **Missing Policy Rule** | TCP timeout / routing loop | Earliest divergence at Policy Rule (`ip rule`) | `sudo ip rule add to <ip>/32 lookup <table_id>` |
+| **Missing Route** | `RTNETLINK: Network is unreachable` | Route lookup failure while interface is UP | `sudo ip route add <dest>/32 dev <iface> via <gw>` |
+| **Interface Down** | Link administratively disabled | Interface state DOWN on required egress path | `sudo ip link set dev <iface> up` |
+| **Firewall Drop** | TCP timeout; routes functional | Active packet filter (`iptables`/`nftables`) DROP rule | `sudo iptables -D OUTPUT -p tcp --dport <port> -j DROP` |
+| **Neighbor ARP Failure** | TCP timeout; route UP | Layer 2 ARP state `INCOMPLETE` / `FAILED` | `sudo ip neigh replace <ip> lladdr <mac> dev <iface>` |
+| **TLS Certificate Error** | TCP connects; TLS handshake fails | Untrusted CA root or expired certificate | `sudo cp <ca.crt> /usr/local/share/ca-certificates/` |
+| **Port Closed / Service Down** | TCP RST (`ECONNREFUSED`) | Full bidirectional reachability confirmed; daemon down | `sudo systemctl status <service>` |
 
 ---
 
-## Validation Probe Catalog
-
-| Probe Name | Parameter | Requires Target | Description |
-|---|---|:---:|---|
-| `TEST_INTERFACE_STATE` | Interface name (e.g. `eth0`) | No | Inspects interface existence, administrative state (`UP`), and operational state (`operstate`) |
-| `TEST_TCP_BIND_INTERFACE` | Interface name (e.g. `tun0`) | Yes | Binds socket to interface via `SO_BINDTODEVICE` to test bypass |
-| `TEST_TCP_BIND_SOURCE` | Source IP (e.g. `10.8.0.14`) | Yes | Binds socket to specific local source address |
-| `TEST_DNS_WITH_RESOLVER` | Resolver IP (e.g. `10.10.0.2`) | Yes | Queries specified DNS server directly to test record presence |
-| `TEST_PROXY_DISABLED` | (none) | Yes | Bypasses `HTTP(S)_PROXY` environment variables to test direct egress |
-| `TEST_DIRECT_IP` | Destination IP | Yes | Connects directly to IP to isolate transport drops from DNS |
-
----
-
-## CLI Reference
+## CLI Command Reference
 
 | Command | Description |
 |---|---|
-| `netdiff diagnose <target> [-b file.ndiff] [-u] [-g] [--html file] [--validate]` | Single-command diagnosis comparing against saved baseline |
+| `netdiff diagnose <target>` | Single-command diagnosis comparing against saved baseline |
 | `netdiff check <target>` | Fast reachability probe with one-line status summary |
-| `netdiff capture <target> [-o file.ndiff]` | Capture target network state to console or `.ndiff` snapshot |
-| `netdiff compare <good> <bad> [-g] [-v] [-j]` | Compare two snapshots and highlight causal differences |
-| `netdiff graph <good> <bad> [--ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
-| `netdiff explain <good> <bad> [-g] [--ai] [--validate]` | Synthesize diagnostic explanation, remediation playbook, and probe |
-| `netdiff ask <good> <bad> "<question>" [-j]` | Ask conversational debugging questions grounded in snapshot evidence |
-| `netdiff report <good> <bad> [-o file] [--html]` | Generate Markdown or standalone interactive HTML incident report |
+| `netdiff capture <target> -o <file>` | Capture target network state to console or `.ndiff` snapshot |
+| `netdiff compare <good> <bad> [-g] [-v] [-j]` | Compare two snapshots and rank causal path differences |
+| `netdiff graph <good> <bad> [--no-ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
+| `netdiff explain <good> <bad> [--no-ai]` | Synthesize diagnostic explanation and remediation playbook |
+| `netdiff ask <good> <bad> "<question>"` | Ask conversational debugging questions grounded in snapshot evidence |
+| `netdiff report <good> <bad> [--html -o file]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
-| `netdiff probe <name> [param] [-t <target>]` | Execute a bounded diagnostic validation probe |
 | `netdiff auth [key]` | Configure Gemini API key for AI reasoning and diagnosis |
-| `netdiff config <show|set-key|clear>` | Manage persistent NetDiff configuration (`~/.netdiff/config.json`) |
+| `netdiff config <show\|set-key\|clear>` | Manage persistent NetDiff configuration (`~/.netdiff/config.json`) |
+| `netdiff probe <name> [param] [-t target]` | Execute a bounded diagnostic validation probe |
 | `netdiff version` | Display version information |
 
 ---
 
-## Testing & Laboratory
+## Reproducible Testing Laboratory (`scripts/lab/`)
 
-### Unprivileged Unit Tests
-Runs the test suite across all platforms without root permissions:
-```bash
-go test -v ./...
-```
-
-### Reproducible Network Laboratory (`scripts/lab/`)
-NetDiff includes an isolated Linux network namespace laboratory (`nd-client` and `nd-server` connected via `veth` pair):
+NetDiff includes an automated, isolated Linux network namespace laboratory (`nd-client` and `nd-server` connected via `veth` pairs) that reproduces common failures without touching host interfaces:
 
 ```bash
-# Run all five scenarios automatically:
+# Run all failure scenarios end-to-end:
 sudo ./scripts/lab/lab.sh run-all
 
 # Or run individual steps:
-sudo ./scripts/lab/lab.sh setup              # Set up namespaces and mock servers
-sudo ./scripts/lab/lab.sh baseline           # Capture good.ndiff
+sudo ./scripts/lab/lab.sh setup              # Create namespaces & mock services
+sudo ./scripts/lab/lab.sh baseline           # Record baseline good.ndiff
 sudo ./scripts/lab/lab.sh inject iface-down  # Inject a fault
-sudo ./scripts/lab/lab.sh capture bad        # Capture failing snapshot
-sudo ./scripts/lab/lab.sh verify iface-down  # Compare and execute validation probe
-sudo ./scripts/lab/lab.sh cleanup            # Tear down namespaces
+sudo ./scripts/lab/lab.sh capture bad        # Capture failing snapshot bad.ndiff
+sudo ./scripts/lab/lab.sh verify iface-down  # Run NetDiff and verify diagnosis
+sudo ./scripts/lab/lab.sh cleanup            # Clean up namespaces
 ```
 
 ---
 
-## Building
+## Installation & Building
 
 ```bash
-# Build local binary
+# Clone the repository:
+git clone https://github.com/Ackintya/netdiff.git
+cd netdiff
+
+# Build local binary:
 go build -o netdiff ./cmd/netdiff
 
-# Cross-compile for Linux AMD64
-GOOS=linux GOARCH=amd64 go build -o netdiff ./cmd/netdiff
+# Run all unit tests:
+go test -v ./...
 ```
+
+---
+
+<p align="center">
+  <sub>Built with care for network engineers, SREs, and systems developers. MIT Licensed.</sub>
+</p>
