@@ -31,11 +31,9 @@ func Compare(workingRaw, failingRaw *model.Snapshot) *model.ComparisonReport {
 
 	var diffs []model.Difference
 
-	// 1. TCP Symptom Diff (The observed outcome)
-	tcpDiff := diffTCP(working.TCP, failing.TCP)
-	if tcpDiff != nil {
-		diffs = append(diffs, *tcpDiff)
-	}
+	// 1. TCP Symptom Diff & Socket Telemetry
+	tcpDiffs := diffTCP(working.TCP, failing.TCP)
+	diffs = append(diffs, tcpDiffs...)
 
 	// 2. DNS Resolution Diff
 	dnsDiffs := diffDNS(working.DNS, failing.DNS)
@@ -72,12 +70,14 @@ func Compare(workingRaw, failingRaw *model.Snapshot) *model.ComparisonReport {
 	return report
 }
 
-func diffTCP(w, f *model.TCPReport) *model.Difference {
+func diffTCP(w, f *model.TCPReport) []model.Difference {
+	var diffs []model.Difference
 	if w == nil || f == nil {
-		return nil
+		return diffs
 	}
+
 	if w.Status != f.Status {
-		return &model.Difference{
+		diffs = append(diffs, model.Difference{
 			Category:       "TCP",
 			Field:          "status",
 			WorkingValue:   string(w.Status),
@@ -85,9 +85,57 @@ func diffTCP(w, f *model.TCPReport) *model.Difference {
 			Relevance:      model.RelevanceHigh,
 			DependencyNode: "TCP",
 			Rationale:      fmt.Sprintf("Working environment %s while failing environment encountered %s.", w.Status, f.Status),
+		})
+	}
+
+	// Socket Telemetry: Packet Retransmissions
+	if f.SocketInfo != nil && (f.SocketInfo.TotalRetrans > 0 || f.SocketInfo.Retransmits > 0) {
+		wRetrans := uint32(0)
+		if w.SocketInfo != nil {
+			wRetrans = w.SocketInfo.TotalRetrans
+		}
+		if f.SocketInfo.TotalRetrans > wRetrans || f.SocketInfo.Retransmits > 0 {
+			diffs = append(diffs, model.Difference{
+				Category:       "TCP",
+				Field:          "retransmits",
+				WorkingValue:   fmt.Sprintf("%d retransmits", wRetrans),
+				FailingValue:   fmt.Sprintf("%d retransmits", f.SocketInfo.TotalRetrans),
+				Relevance:      model.RelevanceHigh,
+				DependencyNode: "TCP",
+				Rationale:      fmt.Sprintf("Kernel socket telemetry reports %d packet retransmissions on failing connection, indicating network segment loss.", f.SocketInfo.TotalRetrans),
+			})
 		}
 	}
-	return nil
+
+	// Socket Telemetry: RTT Divergence
+	if w.SocketInfo != nil && f.SocketInfo != nil && w.SocketInfo.RTTUs > 0 && f.SocketInfo.RTTUs > 0 {
+		if f.SocketInfo.RTTUs >= 3*w.SocketInfo.RTTUs && f.SocketInfo.RTTUs > 50000 {
+			diffs = append(diffs, model.Difference{
+				Category:       "TCP",
+				Field:          "kernel_rtt",
+				WorkingValue:   fmt.Sprintf("%.2fms", float64(w.SocketInfo.RTTUs)/1000.0),
+				FailingValue:   fmt.Sprintf("%.2fms", float64(f.SocketInfo.RTTUs)/1000.0),
+				Relevance:      model.RelevanceMedium,
+				DependencyNode: "TCP",
+				Rationale:      fmt.Sprintf("Kernel socket RTT is significantly higher on failing connection (%.2fms vs %.2fms).", float64(f.SocketInfo.RTTUs)/1000.0, float64(w.SocketInfo.RTTUs)/1000.0),
+			})
+		}
+	}
+
+	// Socket Telemetry: Path MTU
+	if w.SocketInfo != nil && f.SocketInfo != nil && w.SocketInfo.Pmtu > 0 && f.SocketInfo.Pmtu > 0 && w.SocketInfo.Pmtu != f.SocketInfo.Pmtu {
+		diffs = append(diffs, model.Difference{
+			Category:       "TCP",
+			Field:          "socket_pmtu",
+			WorkingValue:   fmt.Sprintf("%d bytes", w.SocketInfo.Pmtu),
+			FailingValue:   fmt.Sprintf("%d bytes", f.SocketInfo.Pmtu),
+			Relevance:      model.RelevanceMedium,
+			DependencyNode: "MTU",
+			Rationale:      fmt.Sprintf("Kernel socket Path MTU differs (working: %d bytes, failing: %d bytes).", w.SocketInfo.Pmtu, f.SocketInfo.Pmtu),
+		})
+	}
+
+	return diffs
 }
 
 func diffDNS(w, f *model.DNSReport) []model.Difference {

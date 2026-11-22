@@ -35,7 +35,7 @@ Commands:
   capture <target>        Capture relevant network state for a target (e.g. host:port)
   compare <good> <bad>    Compare two .ndiff captures and rank causal path differences
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
-  report <good> <bad>     Generate markdown incident post-mortem report (for Slack/Jira/GitHub)
+  report <good> <bad>     Generate incident report in markdown or standalone interactive HTML
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
   version                 Display version information
@@ -43,6 +43,7 @@ Commands:
 Flags for 'diagnose':
   -b, --baseline <file>   Use custom baseline .ndiff snapshot (default: ~/.netdiff/baselines/<target>.ndiff)
   -u, --update            Update/record baseline snapshot with current network state
+  --html <file>           Export standalone interactive HTML report to file
   --ai                    Enable Gemini AI reasoning synthesis layer
   --validate              Immediately execute recommended validation probe against target
 
@@ -62,6 +63,7 @@ Flags for 'explain':
 
 Flags for 'report':
   -o, --output <file>     Output report to file instead of stdout
+  --html                  Generate standalone interactive HTML report (offline-capable)
   --ai                    Enable Gemini AI reasoning synthesis layer
 
 Flags for 'ui':
@@ -139,6 +141,7 @@ func runDiagnose(args []string) {
 	fs.StringVar(baselineFile, "baseline", "", "Custom baseline .ndiff snapshot file")
 	updateBaseline := fs.Bool("u", false, "Update baseline with current network state")
 	fs.BoolVar(updateBaseline, "update", false, "Update baseline with current network state")
+	htmlOutput := fs.String("html", "", "Export standalone interactive HTML report to file")
 	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
 	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
 
@@ -227,6 +230,15 @@ func runDiagnose(args []string) {
 	}
 
 	p.PrintDiagnosis(comparison, explanation)
+
+	if *htmlOutput != "" {
+		htmlContent := report.GenerateHTML(comparison, explanation)
+		if err := os.WriteFile(*htmlOutput, []byte(htmlContent), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing HTML report: %v\n", err)
+		} else {
+			fmt.Printf("✓ Standalone interactive HTML report saved to %s\n", *htmlOutput)
+		}
+	}
 
 	// Active validation probe
 	if *validateFlag && explanation.NextBestProbe != nil {
@@ -506,8 +518,9 @@ func renderProbeAssessment(probeName string, res *probe.ProbeResult) {
 
 func runReport(args []string) {
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
-	outputFile := fs.String("o", "", "Path to output markdown report file")
-	fs.StringVar(outputFile, "output", "", "Path to output markdown report file")
+	outputFile := fs.String("o", "", "Path to output report file")
+	fs.StringVar(outputFile, "output", "", "Path to output report file")
+	htmlFlag := fs.Bool("html", false, "Generate standalone interactive HTML report")
 	aiFlag := fs.Bool("ai", false, "Use Gemini AI reasoning synthesis layer")
 
 	args = reorderArgs(args)
@@ -517,7 +530,7 @@ func runReport(args []string) {
 
 	files := fs.Args()
 	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: report requires two snapshot files: netdiff report <good.ndiff> <bad.ndiff> [-o report.md] [--ai]")
+		fmt.Fprintln(os.Stderr, "Error: report requires two snapshot files: netdiff report <good.ndiff> <bad.ndiff> [-o report.html] [--html] [--ai]")
 		os.Exit(1)
 	}
 
@@ -537,16 +550,33 @@ func runReport(args []string) {
 	reasoner := ai.NewReasoner()
 	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
 
-	md := report.GenerateMarkdown(comparison, explanation)
+	isHTML := *htmlFlag
+	if *outputFile != "" {
+		lower := strings.ToLower(*outputFile)
+		if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
+			isHTML = true
+		}
+	}
+
+	var content string
+	if isHTML {
+		content = report.GenerateHTML(comparison, explanation)
+	} else {
+		content = report.GenerateMarkdown(comparison, explanation)
+	}
 
 	if *outputFile != "" {
-		if err := os.WriteFile(*outputFile, []byte(md), 0644); err != nil {
+		if err := os.WriteFile(*outputFile, []byte(content), 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing report file: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("✓ Saved incident report to %s\n", *outputFile)
+		if isHTML {
+			fmt.Printf("✓ Saved interactive HTML report to %s\n", *outputFile)
+		} else {
+			fmt.Printf("✓ Saved incident report to %s\n", *outputFile)
+		}
 	} else {
-		fmt.Print(md)
+		fmt.Print(content)
 	}
 }
 

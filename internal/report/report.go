@@ -142,16 +142,86 @@ func GenerateMarkdown(comp *model.ComparisonReport, exp *ai.ExplanationReport) s
 		sb.WriteString(fmt.Sprintf("| **Interface Link** | `%s` | `%s` | %s |\n", wIface, fIface, statusIface))
 	}
 
+	// Neighbor Table / ARP
+	if comp.WorkingSnapshot.Neighbor != nil || comp.FailingSnapshot.Neighbor != nil {
+		wNeigh := "none"
+		if comp.WorkingSnapshot.Neighbor != nil && comp.WorkingSnapshot.Neighbor.IP != "" {
+			wNeigh = fmt.Sprintf("%s → %s (%s)", comp.WorkingSnapshot.Neighbor.IP, comp.WorkingSnapshot.Neighbor.MAC, comp.WorkingSnapshot.Neighbor.State)
+		}
+		fNeigh := "none"
+		if comp.FailingSnapshot.Neighbor != nil && comp.FailingSnapshot.Neighbor.IP != "" {
+			fNeigh = fmt.Sprintf("%s → %s (%s)", comp.FailingSnapshot.Neighbor.IP, comp.FailingSnapshot.Neighbor.MAC, comp.FailingSnapshot.Neighbor.State)
+		}
+		statusNeigh := "✓ Same"
+		if wNeigh != fNeigh {
+			statusNeigh = "⚠ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **Neighbor ARP/NDP** | `%s` | `%s` | %s |\n", wNeigh, fNeigh, statusNeigh))
+	}
+
+	// Firewall Filtering
+	if (comp.WorkingSnapshot.Firewall != nil && comp.WorkingSnapshot.Firewall.Active) ||
+		(comp.FailingSnapshot.Firewall != nil && comp.FailingSnapshot.Firewall.Active) {
+		wFw := "inactive"
+		if comp.WorkingSnapshot.Firewall != nil && comp.WorkingSnapshot.Firewall.Active {
+			wFw = fmt.Sprintf("active (%s)", comp.WorkingSnapshot.Firewall.Backend)
+		}
+		fFw := "inactive"
+		if comp.FailingSnapshot.Firewall != nil && comp.FailingSnapshot.Firewall.Active {
+			fFw = fmt.Sprintf("active (%s)", comp.FailingSnapshot.Firewall.Backend)
+		}
+		statusFw := "✓ Same"
+		if wFw != fFw {
+			statusFw = "⚠ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **Host Firewall** | `%s` | `%s` | %s |\n", wFw, fFw, statusFw))
+	}
+
 	// TCP
 	if comp.WorkingSnapshot.TCP != nil && comp.FailingSnapshot.TCP != nil {
 		wTCP := comp.WorkingSnapshot.TCP
 		fTCP := comp.FailingSnapshot.TCP
 		wStatus := fmt.Sprintf("%s (%dms)", wTCP.Status, wTCP.LatencyMs)
+		if wTCP.SocketInfo != nil && wTCP.SocketInfo.TotalRetrans > 0 {
+			wStatus += fmt.Sprintf(" [%d retrans]", wTCP.SocketInfo.TotalRetrans)
+		}
 		fStatus := string(fTCP.Status)
 		if fTCP.LatencyMs > 0 {
 			fStatus = fmt.Sprintf("%s (%dms)", fTCP.Status, fTCP.LatencyMs)
 		}
-		sb.WriteString(fmt.Sprintf("| **TCP Connection** | `%s` | `%s` | ✗ Divergent |\n", wStatus, fStatus))
+		if fTCP.SocketInfo != nil && fTCP.SocketInfo.TotalRetrans > 0 {
+			fStatus += fmt.Sprintf(" [%d retrans]", fTCP.SocketInfo.TotalRetrans)
+		}
+		statusTCP := "✓ Same"
+		if wStatus != fStatus {
+			statusTCP = "✗ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **TCP Connection** | `%s` | `%s` | %s |\n", wStatus, fStatus, statusTCP))
+	}
+
+	// TLS Handshake
+	if comp.WorkingSnapshot.TLS != nil || comp.FailingSnapshot.TLS != nil {
+		wTLS := "none"
+		if comp.WorkingSnapshot.TLS != nil {
+			if comp.WorkingSnapshot.TLS.HandshakeSuccess {
+				wTLS = fmt.Sprintf("success (%s, %s)", comp.WorkingSnapshot.TLS.Version, comp.WorkingSnapshot.TLS.CipherSuite)
+			} else {
+				wTLS = fmt.Sprintf("failed: %s", comp.WorkingSnapshot.TLS.Error)
+			}
+		}
+		fTLS := "none"
+		if comp.FailingSnapshot.TLS != nil {
+			if comp.FailingSnapshot.TLS.HandshakeSuccess {
+				fTLS = fmt.Sprintf("success (%s, %s)", comp.FailingSnapshot.TLS.Version, comp.FailingSnapshot.TLS.CipherSuite)
+			} else {
+				fTLS = fmt.Sprintf("failed: %s", comp.FailingSnapshot.TLS.Error)
+			}
+		}
+		statusTLS := "✓ Same"
+		if wTLS != fTLS {
+			statusTLS = "✗ Divergent"
+		}
+		sb.WriteString(fmt.Sprintf("| **TLS Handshake** | `%s` | `%s` | %s |\n", wTLS, fTLS, statusTLS))
 	}
 
 	sb.WriteString("\n## 4. Ranked Key Differences\n\n")

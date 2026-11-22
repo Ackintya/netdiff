@@ -39,13 +39,9 @@ func StartServer(comp *model.ComparisonReport, exp *ai.ExplanationReport, port i
 			http.NotFound(w, r)
 			return
 		}
-		data, err := assetsFS.ReadFile("assets/index.html")
-		if err != nil {
-			http.Error(w, "Asset not found: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
+		htmlData := report.GenerateHTML(comp, exp)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(data)
+		_, _ = w.Write([]byte(htmlData))
 	})
 
 	// 2. API Data

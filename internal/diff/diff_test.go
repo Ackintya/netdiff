@@ -448,6 +448,61 @@ func TestTLSDivergenceScenario(t *testing.T) {
 	}
 }
 
+func TestTCPSocketInfoDivergence(t *testing.T) {
+	good := &model.Snapshot{
+		Target: model.Target{Raw: "app.internal:80", Host: "app.internal", Port: 80, Protocol: "tcp"},
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP: &model.TCPReport{
+			Status:    model.TCPStatusConnected,
+			LatencyMs: 5,
+			SocketInfo: &model.TCPSocketInfo{
+				RTTUs:        5000,
+				TotalRetrans: 0,
+				Pmtu:         1500,
+			},
+		},
+	}
+
+	bad := &model.Snapshot{
+		Target: good.Target,
+		Route:  &model.RouteReport{EgressInterface: "eth0", Success: true},
+		TCP: &model.TCPReport{
+			Status:    model.TCPStatusConnected,
+			LatencyMs: 180,
+			SocketInfo: &model.TCPSocketInfo{
+				RTTUs:        180000,
+				TotalRetrans: 14,
+				Retransmits:  3,
+				Pmtu:         1420,
+			},
+		},
+	}
+
+	report := Compare(good, bad)
+	var foundRetrans, foundRTT, foundPMTU bool
+	for _, d := range report.Differences {
+		if d.Category == "TCP" && d.Field == "retransmits" && d.Relevance == model.RelevanceHigh {
+			foundRetrans = true
+		}
+		if d.Category == "TCP" && d.Field == "kernel_rtt" {
+			foundRTT = true
+		}
+		if d.Category == "TCP" && d.Field == "socket_pmtu" {
+			foundPMTU = true
+		}
+	}
+
+	if !foundRetrans {
+		t.Error("expected HIGH relevance retransmits diff from socket telemetry")
+	}
+	if !foundRTT {
+		t.Error("expected kernel_rtt diff from socket telemetry")
+	}
+	if !foundPMTU {
+		t.Error("expected socket_pmtu diff from socket telemetry")
+	}
+}
+
 func containsSubstr(s, sub string) bool {
 	return len(s) >= len(sub) && (s == sub || len(sub) == 0 || (len(s) > 0 && len(sub) > 0 && stringsContains(s, sub)))
 }

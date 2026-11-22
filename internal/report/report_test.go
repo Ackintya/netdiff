@@ -87,3 +87,99 @@ func TestGenerateMarkdown(t *testing.T) {
 		t.Errorf("expected probe command suggestion in markdown, got: %s", md)
 	}
 }
+
+func TestGenerateHTML(t *testing.T) {
+	comp := &model.ComparisonReport{
+		WorkingHost: "host-a",
+		FailingHost: "host-b",
+		Target: model.Target{
+			Raw:      "api.internal:443",
+			Host:     "api.internal",
+			Port:     443,
+			Protocol: "https",
+		},
+		EarliestDivergence: "TLS Handshake: untrusted_root",
+		WorkingSnapshot: &model.Snapshot{
+			Metadata: model.SnapshotMetadata{OS: "linux"},
+			Route: &model.RouteReport{
+				EgressInterface: "eth0",
+				Success:         true,
+			},
+			TCP: &model.TCPReport{
+				Status:    model.TCPStatusConnected,
+				LatencyMs: 12,
+				SocketInfo: &model.TCPSocketInfo{
+					RTTUs:        12000,
+					TotalRetrans: 0,
+					SndCwnd:      10,
+				},
+			},
+			TLS: &model.TLSReport{
+				HandshakeSuccess: true,
+				Version:          "TLS 1.3",
+				CipherSuite:      "TLS_AES_128_GCM_SHA256",
+			},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Metadata: model.SnapshotMetadata{OS: "linux"},
+			Route: &model.RouteReport{
+				EgressInterface: "eth0",
+				Success:         true,
+			},
+			TCP: &model.TCPReport{
+				Status:    model.TCPStatusConnected,
+				LatencyMs: 12,
+				SocketInfo: &model.TCPSocketInfo{
+					RTTUs:        12000,
+					TotalRetrans: 5,
+					SndCwnd:      4,
+				},
+			},
+			TLS: &model.TLSReport{
+				HandshakeSuccess: false,
+				Error:            "x509: certificate signed by unknown authority",
+				ErrorCategory:    "untrusted_root",
+			},
+		},
+		Differences: []model.Difference{
+			{
+				Category:       "TLS",
+				Field:          "tls_handshake",
+				WorkingValue:   "success (TLS 1.3)",
+				FailingValue:   "failed (x509: certificate signed by unknown authority)",
+				Relevance:      model.RelevanceHigh,
+				DependencyNode: "TLS Handshake",
+				Rationale:      "TLS certificate authority is untrusted on failing host.",
+			},
+		},
+	}
+
+	exp := &ai.ExplanationReport{
+		Summary: "Root CA certificate missing from trust store on failing host.",
+		Hypotheses: []ai.DiagnosticHypothesis{
+			{
+				Title:        "Missing CA Certificate",
+				SupportLevel: "strong",
+				Rationale:    "Endpoint presents internal CA certificate.",
+			},
+		},
+	}
+
+	html := GenerateHTML(comp, exp)
+
+	if !strings.Contains(html, "<!DOCTYPE html>") {
+		t.Errorf("expected HTML document doctype")
+	}
+	if !strings.Contains(html, "window.__NETDIFF_DATA__") {
+		t.Errorf("expected window.__NETDIFF_DATA__ script injection")
+	}
+	if !strings.Contains(html, "window.__NETDIFF_MD__") {
+		t.Errorf("expected window.__NETDIFF_MD__ script injection")
+	}
+	if !strings.Contains(html, "api.internal") {
+		t.Errorf("expected target host in generated HTML")
+	}
+	if !strings.Contains(html, "untrusted_root") {
+		t.Errorf("expected TLS error category in injected JSON")
+	}
+}

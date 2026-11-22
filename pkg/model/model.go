@@ -77,14 +77,32 @@ const (
 	TCPStatusFailed      TCPStatus = "failed"
 )
 
+// TCPSocketInfo captures low-level kernel TCP socket telemetry via TCP_INFO.
+type TCPSocketInfo struct {
+	RTTUs           uint32 `json:"rtt_us,omitempty"`            // Round trip time in microseconds
+	RTTVarUs        uint32 `json:"rtt_var_us,omitempty"`        // RTT variance in microseconds
+	MinRTTUs        uint32 `json:"min_rtt_us,omitempty"`        // Minimum RTT observed in microseconds
+	SndCwnd         uint32 `json:"snd_cwnd,omitempty"`          // Congestion window (packets)
+	SndMSS          uint32 `json:"snd_mss,omitempty"`           // Sender MSS
+	RcvMSS          uint32 `json:"rcv_mss,omitempty"`           // Receiver MSS
+	Retransmits     uint8  `json:"retransmits,omitempty"`       // Unrecovered retransmissions
+	TotalRetrans    uint32 `json:"total_retrans,omitempty"`     // Total retransmissions across socket lifetime
+	Lost            uint32 `json:"lost,omitempty"`              // Packets lost
+	Pmtu            uint32 `json:"pmtu,omitempty"`              // Kernel Path MTU
+	DeliveryRateBps uint64 `json:"delivery_rate_bps,omitempty"` // Delivery rate in bytes/sec
+	BytesSent       uint64 `json:"bytes_sent,omitempty"`        // Bytes sent
+	BytesRetrans    uint64 `json:"bytes_retrans,omitempty"`     // Bytes retransmitted
+}
+
 // TCPReport captures the connection attempt outcome.
 type TCPReport struct {
-	Status     TCPStatus `json:"status"`
-	LatencyMs  int64     `json:"latency_ms"`
-	LocalAddr  string    `json:"local_addr,omitempty"`
-	RemoteIP   string    `json:"remote_ip,omitempty"`
-	RemotePort int       `json:"remote_port"`
-	Error      string    `json:"error,omitempty"`
+	Status     TCPStatus      `json:"status"`
+	LatencyMs  int64          `json:"latency_ms"`
+	LocalAddr  string         `json:"local_addr,omitempty"`
+	RemoteIP   string         `json:"remote_ip,omitempty"`
+	RemotePort int            `json:"remote_port"`
+	Error      string         `json:"error,omitempty"`
+	SocketInfo *TCPSocketInfo `json:"socket_info,omitempty"`
 }
 
 // ProxyReport captures environment proxy variables that could alter traffic flow.

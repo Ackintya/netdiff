@@ -289,6 +289,24 @@ func (p *Printer) PrintCapturePath(snap *model.Snapshot) {
 			local = "client"
 		}
 		detail := fmt.Sprintf("✓ connected  %s→%s  (%dms)", local, remote, snap.TCP.LatencyMs)
+		if snap.TCP.SocketInfo != nil {
+			var extras []string
+			if snap.TCP.SocketInfo.RTTUs > 0 {
+				extras = append(extras, fmt.Sprintf("kernel RTT: %.2fms", float64(snap.TCP.SocketInfo.RTTUs)/1000.0))
+			}
+			if snap.TCP.SocketInfo.Retransmits > 0 || snap.TCP.SocketInfo.TotalRetrans > 0 {
+				extras = append(extras, fmt.Sprintf("retrans: %d", snap.TCP.SocketInfo.TotalRetrans))
+			}
+			if snap.TCP.SocketInfo.SndCwnd > 0 {
+				extras = append(extras, fmt.Sprintf("cwnd: %d", snap.TCP.SocketInfo.SndCwnd))
+			}
+			if snap.TCP.SocketInfo.Pmtu > 0 {
+				extras = append(extras, fmt.Sprintf("pmtu: %d", snap.TCP.SocketInfo.Pmtu))
+			}
+			if len(extras) > 0 {
+				detail += fmt.Sprintf(" [%s]", strings.Join(extras, ", "))
+			}
+		}
 		p.printPathRow("TCP", ColorGreen, "●", detail)
 	} else if snap.TCP.Status == model.TCPStatusRefused {
 		p.printPathRow("TCP", ColorRed, "✗", fmt.Sprintf("connection refused on port %d", snap.Target.Port))
@@ -682,7 +700,15 @@ func formatTCP(t *model.TCPReport) string {
 		return "unknown"
 	}
 	if t.Status == model.TCPStatusConnected {
-		return fmt.Sprintf("connected (%dms)", t.LatencyMs)
+		res := fmt.Sprintf("connected (%dms)", t.LatencyMs)
+		if t.SocketInfo != nil {
+			if t.SocketInfo.TotalRetrans > 0 {
+				res += fmt.Sprintf(" [%d retrans]", t.SocketInfo.TotalRetrans)
+			} else if t.SocketInfo.RTTUs > 0 {
+				res += fmt.Sprintf(" [RTT %.1fms]", float64(t.SocketInfo.RTTUs)/1000.0)
+			}
+		}
+		return res
 	}
 	return string(t.Status)
 }

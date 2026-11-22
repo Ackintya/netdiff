@@ -437,6 +437,42 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			Reason:    "Validate direct IP reachability without TLS to isolate application transport from encryption handshake.",
 		}
 
+	case "TCP":
+		if primary.Field == "retransmits" {
+			result.Summary = fmt.Sprintf("Kernel socket telemetry detected packet retransmissions on the failing host (%s). Bidirectional TCP transport was established, but packets are dropping along the network path.", primary.FailingValue)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "Intermediate Network Congestion or Packet Loss",
+					SupportLevel: "strong",
+					Rationale:    fmt.Sprintf("Kernel socket telemetry tracked %s on the failing connection. This indicates link buffer overruns, flaky switches, or intermediate firewall state table drops.", primary.FailingValue),
+				},
+				{
+					Title:        "Asymmetric Routing or Path MTU Issues",
+					SupportLevel: "moderate",
+					Rationale:    "Path MTU black holes or asymmetric return path drops can trigger repeated packet retransmissions.",
+				},
+			}
+			result.NextBestProbe = &DiagnosticProbeChoice{
+				ProbeName: "TEST_DIRECT_IP",
+				Parameter: report.Target.Host,
+				Reason:    "Test direct ICMP reachability and loss to isolate transport loss from higher layer protocols.",
+			}
+		} else {
+			result.Summary = fmt.Sprintf("TCP connection failure: working was %s while failing encountered %s.", primary.WorkingValue, primary.FailingValue)
+			result.Hypotheses = []DiagnosticHypothesis{
+				{
+					Title:        "TCP Port Unreachable or Refused",
+					SupportLevel: "strong",
+					Rationale:    primary.Rationale,
+				},
+			}
+			result.NextBestProbe = &DiagnosticProbeChoice{
+				ProbeName: "TEST_DIRECT_IP",
+				Parameter: report.Target.Host,
+				Reason:    "Validate direct IP reachability to isolate transport layer drops.",
+			}
+		}
+
 	default:
 		result.Summary = fmt.Sprintf("Network divergence detected in %s (%s vs %s). This path divergence directly accounts for observed TCP outcome (%s).",
 			primary.Category, primary.WorkingValue, primary.FailingValue, fTCP)

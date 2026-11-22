@@ -45,8 +45,11 @@ netdiff explain good.ndiff bad.ndiff
 # 5. Run the validation probe in the failing environment:
 netdiff probe TEST_INTERFACE_STATE veth-client
 
-# 6. (Optional) Generate an incident report or launch the UI:
+# 6. (Optional) Generate a Markdown or standalone interactive HTML incident report:
 netdiff report good.ndiff bad.ndiff -o incident.md
+netdiff report good.ndiff bad.ndiff --html -o report.html
+
+# 7. (Optional) Launch the interactive browser visualizer:
 netdiff ui good.ndiff bad.ndiff -p 8080
 ```
 
@@ -87,7 +90,7 @@ Deterministic Reasoning     Optional Gemini AI
 CLI Output    Web Dashboard    Markdown Report
 ```
 
-1. **Target-Bounded State Collection**: Rather than dumping entire system configurations, NetDiff only queries the state relevant to the specified destination: kernel FIB route lookup (`ip route get`), matching policy routing rules (`ip rule`), egress link state, MTU, ARP neighbor entries, and TCP dial results.
+1. **Target-Bounded State Collection**: Rather than dumping entire system configurations, NetDiff only queries the state relevant to the specified destination: kernel FIB route lookup (`ip route get`), matching policy routing rules (`ip rule`), egress link state, MTU, ARP neighbor entries, kernel TCP socket telemetry (`TCP_INFO`), and TLS handshake negotiation.
 2. **Semantic Normalization**: Eliminates dynamic noise such as ephemeral ports, interface index numbers, and loopback variations across hosts.
 3. **Evidence Dependency Graph (DAG)**: NetDiff models the packet path as a sequence:
    $$\text{Hostname} \rightarrow \text{DNS} \rightarrow \text{Destination IP} \rightarrow \text{Policy Rule} \rightarrow \text{Route Table} \rightarrow \text{Route Lookup} \rightarrow \text{Gateway/Src/Iface} \rightarrow \text{Neighbor ARP} \rightarrow \text{MTU} \rightarrow \text{TCP} \rightarrow \text{TLS Handshake}$$
@@ -131,12 +134,12 @@ NetDiff is designed to accurately identify and distinguish between common networ
 
 | Command | Description |
 |---|---|
-| `netdiff diagnose <target> [-b file.ndiff] [-u] [--validate]` | Single-command diagnosis comparing against saved baseline |
+| `netdiff diagnose <target> [-b file.ndiff] [-u] [--html report.html] [--validate]` | Single-command diagnosis comparing against saved baseline |
 | `netdiff check <target>` | Fast reachability probe with one-line status summary |
 | `netdiff capture <target> [-o file.ndiff]` | Capture target network state to console or `.ndiff` snapshot |
 | `netdiff compare <good> <bad> [-v] [-j]` | Compare two snapshots and highlight causal differences |
 | `netdiff explain <good> <bad> [--ai] [--validate]` | Synthesize diagnostic explanation and recommended validation probe |
-| `netdiff report <good> <bad> [-o file.md]` | Generate Markdown incident report for Slack or Jira |
+| `netdiff report <good> <bad> [-o file] [--html]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff probe <name> [param] [-t <target>]` | Execute a bounded diagnostic validation probe |
 | `netdiff version` | Display version information |

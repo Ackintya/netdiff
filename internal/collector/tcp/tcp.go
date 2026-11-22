@@ -54,6 +54,7 @@ func (c *Collector) Collect(ctx context.Context, target model.Target, resolvedIP
 	if conn.LocalAddr() != nil {
 		report.LocalAddr = conn.LocalAddr().String()
 	}
+	report.SocketInfo = getSocketInfo(conn)
 
 	return report, nil
 }

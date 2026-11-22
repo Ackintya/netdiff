@@ -709,6 +709,11 @@
     let appData = null;
 
     async function loadData() {
+      if (window.__NETDIFF_DATA__) {
+        appData = window.__NETDIFF_DATA__;
+        renderDashboard(appData);
+        return;
+      }
       try {
         const res = await fetch('/api/data');
         if (!res.ok) throw new Error("HTTP " + res.status);
@@ -847,22 +852,53 @@
           relevance: "HIGH"
         },
         {
+          id: "Neighbor ARP",
+          label: "Neighbor ARP / NDP",
+          wVal: formatNeighbor(wSnap.neighbor),
+          fVal: formatNeighbor(fSnap.neighbor),
+          same: ((wSnap.neighbor && wSnap.neighbor.state) || "") === ((fSnap.neighbor && fSnap.neighbor.state) || "") &&
+                ((wSnap.neighbor && wSnap.neighbor.mac) || "") === ((fSnap.neighbor && fSnap.neighbor.mac) || ""),
+          relevance: "HIGH",
+          neighborData: { w: wSnap.neighbor, f: fSnap.neighbor }
+        },
+        {
           id: "MTU",
           label: "Interface MTU",
-          wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} bytes` : "1500",
-          fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} bytes` : "1500",
+          wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} bytes` : "1500 bytes",
+          fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} bytes` : "1500 bytes",
           same: ((wSnap.interface && wSnap.interface.mtu) || 1500) === ((fSnap.interface && fSnap.interface.mtu) || 1500),
           relevance: "MEDIUM"
         },
+        ...( ((wSnap.firewall && wSnap.firewall.active) || (fSnap.firewall && fSnap.firewall.active)) ? [{
+          id: "Firewall",
+          label: "Host Packet Filtering",
+          wVal: (wSnap.firewall && wSnap.firewall.active) ? `active (${wSnap.firewall.backend || 'filter'})` : "inactive",
+          fVal: (fSnap.firewall && fSnap.firewall.active) ? `active (${fSnap.firewall.backend || 'filter'})` : "inactive",
+          same: (wSnap.firewall && fSnap.firewall && wSnap.firewall.active === fSnap.firewall.active),
+          relevance: "HIGH",
+          firewallData: { w: wSnap.firewall, f: fSnap.firewall }
+        }] : [] ),
         {
           id: "TCP",
-          label: "TCP Handshake",
-          wVal: wSnap.tcp ? `${wSnap.tcp.status} (${wSnap.tcp.latency_ms}ms)` : "unknown",
-          fVal: fSnap.tcp ? `${fSnap.tcp.status}` : "unknown",
-          same: (wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status),
+          label: "TCP Handshake & Telemetry",
+          wVal: formatTCP(wSnap.tcp),
+          fVal: formatTCP(fSnap.tcp),
+          same: (wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status &&
+                (!fSnap.tcp.socket_info || fSnap.tcp.socket_info.total_retrans === 0)),
           isTCP: true,
-          relevance: "HIGH"
-        }
+          relevance: "HIGH",
+          tcpData: { w: wSnap.tcp, f: fSnap.tcp }
+        },
+        ...( (wSnap.tls || fSnap.tls || (comp.target && (comp.target.port === 443 || comp.target.protocol === "https" || comp.target.protocol === "tls"))) ? [{
+          id: "TLS Handshake",
+          label: "TLS Handshake & Certs",
+          wVal: formatTLS(wSnap.tls),
+          fVal: formatTLS(fSnap.tls),
+          same: (wSnap.tls && fSnap.tls && wSnap.tls.handshake_success === fSnap.tls.handshake_success),
+          isTLS: true,
+          relevance: "HIGH",
+          tlsData: { w: wSnap.tls, f: fSnap.tls }
+        }] : [] )
       ];
 
       const container = document.getElementById('dag-container');
@@ -902,8 +938,8 @@
         // Failing Node
         const fNode = document.createElement('div');
         fNode.className = "dag-node failing-node";
-        const failStatusClass = tier.isTCP ? 'state-fail' : (tier.same ? 'state-same' : 'state-diff');
-        const failStatusLabel = tier.isTCP && !tier.same ? '✗ FAIL' : (tier.same ? '✓ MATCH' : '⚠ DIVERGENT');
+        const failStatusClass = (tier.isTCP || tier.isTLS) && !tier.same ? 'state-fail' : (tier.same ? 'state-same' : 'state-diff');
+        const failStatusLabel = (tier.isTCP || tier.isTLS) && !tier.same ? '✗ FAIL' : (tier.same ? '✓ MATCH' : '⚠ DIVERGENT');
         fNode.innerHTML = `
           <div class="node-header">
             <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">FAILING</span>
@@ -928,6 +964,132 @@
     function selectNode(tier) {
       document.querySelectorAll('.dag-node').forEach(el => el.classList.remove('selected'));
 
+      const comp = appData ? appData.comparison : null;
+      let matchingDiff = null;
+      if (comp && comp.differences) {
+        matchingDiff = comp.differences.find(d => 
+          (d.dependency_node && tier.id.includes(d.dependency_node)) ||
+          (d.category && tier.id.includes(d.category))
+        );
+      }
+
+      let extraHTML = '';
+      if (matchingDiff && matchingDiff.rationale) {
+        extraHTML += `
+          <div style="margin-top: 14px; padding: 12px; background: rgba(255, 214, 0, 0.08); border-left: 3px solid var(--status-amber); border-radius: 6px; font-size: 13px; line-height: 1.5; color: #fff;">
+            <strong style="color: var(--status-amber);">Causal Rationale:</strong> ${escapeHtml(matchingDiff.rationale)}
+          </div>
+        `;
+      }
+
+      // TCP Socket Telemetry Details
+      if (tier.tcpData) {
+        const wT = tier.tcpData.w;
+        const fT = tier.tcpData.f;
+        const wS = wT ? wT.socket_info : null;
+        const fS = fT ? fT.socket_info : null;
+        if (wS || fS) {
+          extraHTML += `
+            <div style="margin-top: 16px;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--accent-cyan); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Kernel TCP_INFO Telemetry</div>
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); background: rgba(12, 17, 29, 0.6); border-radius: 6px; overflow: hidden;">
+                <thead>
+                  <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-muted); font-size: 11px;">
+                    <th style="padding: 6px 10px;">Metric</th>
+                    <th style="padding: 6px 10px;">Working</th>
+                    <th style="padding: 6px 10px;">Failing</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                    <td style="padding: 6px 10px; color: var(--text-muted);">Kernel RTT</td>
+                    <td style="padding: 6px 10px; color: var(--status-green);">${wS && wS.rtt_us ? (wS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td>
+                    <td style="padding: 6px 10px; color: ${fS && fS.rtt_us > (wS ? wS.rtt_us*2 : 50000) ? 'var(--status-amber)' : 'inherit'};">${fS && fS.rtt_us ? (fS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                    <td style="padding: 6px 10px; color: var(--text-muted);">RTT Variance</td>
+                    <td style="padding: 6px 10px;">${wS && wS.rtt_var_us ? (wS.rtt_var_us/1000).toFixed(2) + ' ms' : '-'}</td>
+                    <td style="padding: 6px 10px;">${fS && fS.rtt_var_us ? (fS.rtt_var_us/1000).toFixed(2) + ' ms' : '-'}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                    <td style="padding: 6px 10px; color: var(--text-muted);">Retransmissions</td>
+                    <td style="padding: 6px 10px;">${wS ? wS.total_retrans : 0}</td>
+                    <td style="padding: 6px 10px; color: ${fS && fS.total_retrans > 0 ? 'var(--status-red)' : 'inherit'}; font-weight: ${fS && fS.total_retrans > 0 ? '700' : 'normal'};">${fS ? fS.total_retrans : 0}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                    <td style="padding: 6px 10px; color: var(--text-muted);">Congestion Window (cwnd)</td>
+                    <td style="padding: 6px 10px;">${wS && wS.snd_cwnd ? wS.snd_cwnd + ' pkts' : '-'}</td>
+                    <td style="padding: 6px 10px;">${fS && fS.snd_cwnd ? fS.snd_cwnd + ' pkts' : '-'}</td>
+                  </tr>
+                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                    <td style="padding: 6px 10px; color: var(--text-muted);">Path MTU (PMTU)</td>
+                    <td style="padding: 6px 10px;">${wS && wS.pmtu ? wS.pmtu + ' B' : '-'}</td>
+                    <td style="padding: 6px 10px;">${fS && fS.pmtu ? fS.pmtu + ' B' : '-'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 6px 10px; color: var(--text-muted);">Lost Packets</td>
+                    <td style="padding: 6px 10px;">${wS ? wS.lost : 0}</td>
+                    <td style="padding: 6px 10px; color: ${fS && fS.lost > 0 ? 'var(--status-red)' : 'inherit'};">${fS ? fS.lost : 0}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          `;
+        }
+      }
+
+      // TLS Certificate Details
+      if (tier.tlsData) {
+        const wTLS = tier.tlsData.w;
+        const fTLS = tier.tlsData.f;
+        extraHTML += `
+          <div style="margin-top: 16px;">
+            <div style="font-size: 12px; font-weight: 700; color: var(--accent-cyan); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">TLS Handshake & Certificate Details</div>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); background: rgba(12, 17, 29, 0.6); border-radius: 6px; overflow: hidden;">
+              <thead>
+                <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-muted); font-size: 11px;">
+                  <th style="padding: 6px 10px;">Property</th>
+                  <th style="padding: 6px 10px;">Working</th>
+                  <th style="padding: 6px 10px;">Failing</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Handshake</td>
+                  <td style="padding: 6px 10px; color: var(--status-green);">${wTLS && wTLS.handshake_success ? '✓ Succeeded' : (wTLS ? '✗ Failed' : '-')}</td>
+                  <td style="padding: 6px 10px; color: ${fTLS && fTLS.handshake_success ? 'var(--status-green)' : 'var(--status-red)'}; font-weight: 700;">${fTLS && fTLS.handshake_success ? '✓ Succeeded' : (fTLS ? '✗ Failed' : '-')}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Protocol Version</td>
+                  <td style="padding: 6px 10px;">${wTLS && wTLS.version ? escapeHtml(wTLS.version) : '-'}</td>
+                  <td style="padding: 6px 10px;">${fTLS && fTLS.version ? escapeHtml(fTLS.version) : '-'}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Cipher Suite</td>
+                  <td style="padding: 6px 10px;">${wTLS && wTLS.cipher_suite ? escapeHtml(wTLS.cipher_suite) : '-'}</td>
+                  <td style="padding: 6px 10px;">${fTLS && fTLS.cipher_suite ? escapeHtml(fTLS.cipher_suite) : '-'}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Certificate Issuer</td>
+                  <td style="padding: 6px 10px;">${wTLS && wTLS.issuer ? escapeHtml(wTLS.issuer) : '-'}</td>
+                  <td style="padding: 6px 10px;">${fTLS && fTLS.issuer ? escapeHtml(fTLS.issuer) : '-'}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Expiry</td>
+                  <td style="padding: 6px 10px;">${wTLS && wTLS.days_until_expiry ? wTLS.days_until_expiry + ' days left' : '-'}</td>
+                  <td style="padding: 6px 10px;">${fTLS && fTLS.days_until_expiry ? fTLS.days_until_expiry + ' days left' : '-'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 6px 10px; color: var(--text-muted);">Handshake Error</td>
+                  <td style="padding: 6px 10px;">${wTLS && wTLS.error ? escapeHtml(wTLS.error) : 'none'}</td>
+                  <td style="padding: 6px 10px; color: ${fTLS && fTLS.error ? 'var(--status-red)' : 'inherit'};">${fTLS && fTLS.error ? escapeHtml(fTLS.error) : 'none'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
       const inspector = document.getElementById('inspector-content');
       inspector.innerHTML = `
         <div style="font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px;">${escapeHtml(tier.label)}</div>
@@ -948,6 +1110,7 @@
             <div class="meta-box-val" style="color: var(--accent-cyan);">${escapeHtml(tier.relevance || 'HIGH')}</div>
           </div>
         </div>
+        ${extraHTML}
       `;
     }
 
@@ -1006,11 +1169,61 @@
     }
 
     function downloadReport() {
-      window.open('/api/report', '_blank');
+      if (window.__NETDIFF_MD__) {
+        const blob = new Blob([window.__NETDIFF_MD__], { type: 'text/markdown;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `netdiff-incident-${(appData && appData.comparison && appData.comparison.target && appData.comparison.target.host) || 'report'}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        window.open('/api/report', '_blank');
+      }
     }
 
     function openRawJSON() {
-      window.open('/api/data', '_blank');
+      if (appData) {
+        const blob = new Blob([JSON.stringify(appData, null, 2)], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        window.open(url, '_blank');
+      } else {
+        window.open('/api/data', '_blank');
+      }
+    }
+
+    function formatNeighbor(n) {
+      if (!n || !n.ip) return "none";
+      const mac = n.mac || "no-mac";
+      const state = n.state || "REACHABLE";
+      return `${n.ip} → ${mac} (${state})`;
+    }
+
+    function formatTCP(t) {
+      if (!t) return "unknown";
+      if (t.status !== "connected") {
+        return t.error ? `${t.status} (${t.error})` : `${t.status}`;
+      }
+      let res = `connected (${t.latency_ms}ms)`;
+      if (t.socket_info) {
+        if (t.socket_info.total_retrans > 0) {
+          res += ` [${t.socket_info.total_retrans} retrans]`;
+        } else if (t.socket_info.rtt_us > 0) {
+          res += ` [RTT ${(t.socket_info.rtt_us / 1000).toFixed(1)}ms]`;
+        }
+      }
+      return res;
+    }
+
+    function formatTLS(t) {
+      if (!t) return "not performed";
+      if (!t.handshake_success) {
+        return `failed (${t.error || 'unknown'})`;
+      }
+      let res = `✓ ${t.version || 'TLS'} (${t.cipher_suite || 'cipher'})`;
+      if (t.issuer) res += ` [issuer: ${t.issuer}]`;
+      if (t.days_until_expiry) res += ` [${t.days_until_expiry}d left]`;
+      return res;
     }
 
     function formatDNS(dns) {
