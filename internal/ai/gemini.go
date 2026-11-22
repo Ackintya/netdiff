@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"netdiff/internal/config"
 	"netdiff/pkg/model"
 )
 
@@ -81,15 +82,25 @@ type Reasoner struct {
 func NewReasoner() *Reasoner {
 	modelName := os.Getenv("GEMINI_MODEL")
 	if modelName == "" {
-		modelName = "gemini-2.5-flash"
+		cfg, _ := config.Load()
+		if cfg != nil && cfg.GeminiModel != "" {
+			modelName = cfg.GeminiModel
+		} else {
+			modelName = "gemini-2.5-flash"
+		}
 	}
 	return &Reasoner{
-		APIKey: os.Getenv("GEMINI_API_KEY"),
+		APIKey: config.GetAPIKey(),
 		Model:  modelName,
 		HTTPClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
 	}
+}
+
+// HasAPIKey returns true if a Gemini API key is configured in env or config file.
+func (r *Reasoner) HasAPIKey() bool {
+	return strings.TrimSpace(r.APIKey) != ""
 }
 
 // Explain synthesizes the structured comparison into an incident diagnosis and recommended probe.

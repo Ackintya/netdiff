@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"netdiff/internal/ai"
+	"netdiff/internal/config"
 	"netdiff/internal/diff"
 	"netdiff/internal/printer"
 	"netdiff/internal/probe"
@@ -41,6 +42,8 @@ Commands:
   report <good> <bad>     Generate incident report in markdown or standalone interactive HTML
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
+  auth [key]              Configure Gemini API key for AI reasoning and diagnosis
+  config <subcommand>     Manage NetDiff configuration (show, set-key, clear)
   version                 Display version information
 
 Flags for 'diagnose':
@@ -48,7 +51,8 @@ Flags for 'diagnose':
   -u, --update            Update/record baseline snapshot with current network state
   -g, --graph             Render terminal causal dependency graph
   --html <file>           Export standalone interactive HTML report to file
-  --ai                    Enable Gemini AI reasoning synthesis layer
+  --ai                    Force Gemini AI reasoning synthesis layer
+  --no-ai                 Disable Gemini AI reasoning and use local deterministic engine
   --validate              Immediately execute recommended validation probe against target
 
 Flags for 'check':
@@ -63,10 +67,12 @@ Flags for 'compare':
   -j, --json              Output machine-readable JSON comparison
 
 Flags for 'graph':
-  --ai                    Enable Gemini AI reasoning synthesis layer
+  --ai                    Force Gemini AI reasoning synthesis layer
+  --no-ai                 Disable Gemini AI reasoning
 
 Flags for 'explain':
-  --ai                    Enable Gemini AI reasoning synthesis layer
+  --ai                    Force Gemini AI reasoning synthesis layer
+  --no-ai                 Disable Gemini AI reasoning and use local deterministic engine
   --validate              Immediately execute recommended validation probe against target
 
 Flags for 'ask':
@@ -76,7 +82,8 @@ Flags for 'ask':
 Flags for 'report':
   -o, --output <file>     Output report to file instead of stdout
   --html                  Generate standalone interactive HTML report (offline-capable)
-  --ai                    Enable Gemini AI reasoning synthesis layer
+  --ai                    Force Gemini AI reasoning synthesis layer
+  --no-ai                 Disable Gemini AI reasoning
 
 Flags for 'ui':
   -p, --port <port>       Local HTTP port to serve UI on (default: 8080)
@@ -87,6 +94,9 @@ Flags for 'probe':
   -t, --target <host:port> Target connection to validate
 
 Examples:
+  netdiff auth AIzaSy...                         # Configure Gemini API key once
+  netdiff auth                                   # Interactive prompt to enter API key
+  netdiff config show                            # Display current configuration & AI status
   netdiff diagnose api.internal.corp:443
   netdiff diagnose api.internal.corp:443 --validate
   netdiff check api.internal.corp:443
@@ -94,7 +104,7 @@ Examples:
   netdiff capture api.internal.corp:443 -o host-b.ndiff
   netdiff compare host-a.ndiff host-b.ndiff
   netdiff graph host-a.ndiff host-b.ndiff
-  netdiff explain host-a.ndiff host-b.ndiff --ai
+  netdiff explain host-a.ndiff host-b.ndiff
   netdiff explain host-a.ndiff host-b.ndiff --validate
   netdiff ask host-a.ndiff host-b.ndiff "Why is the connection timing out?"
   netdiff ask api.internal.corp:443 "Is this blocked by firewall or routing?"
@@ -118,6 +128,12 @@ func main() {
 
 	case "version", "-v", "--version":
 		fmt.Printf("netdiff version %s\n", appVersion)
+
+	case "auth":
+		runAuth(os.Args[2:])
+
+	case "config":
+		runConfig(os.Args[2:])
 
 	case "diagnose":
 		runDiagnose(os.Args[2:])
@@ -165,7 +181,8 @@ func runDiagnose(args []string) {
 	htmlOutput := fs.String("html", "", "Export standalone interactive HTML report to file")
 	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
 	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
-	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
+	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning synthesis layer")
+	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
 	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
 
 	args = reorderArgs(args)
@@ -246,7 +263,8 @@ func runDiagnose(args []string) {
 
 	comparison := diff.Compare(baseSnap, currSnap)
 	reasoner := ai.NewReasoner()
-	explanation, err := reasoner.Explain(ctx, comparison, *aiFlag)
+	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
+	explanation, err := reasoner.Explain(ctx, comparison, useAI)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating explanation: %v\n", err)
 		os.Exit(1)
@@ -426,7 +444,8 @@ func runCompare(args []string) {
 
 func runGraph(args []string) {
 	fs := flag.NewFlagSet("graph", flag.ExitOnError)
-	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning synthesis layer")
+	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning synthesis layer")
+	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -435,7 +454,7 @@ func runGraph(args []string) {
 
 	files := fs.Args()
 	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: graph requires two snapshot files: netdiff graph <good.ndiff> <bad.ndiff> [--ai]")
+		fmt.Fprintln(os.Stderr, "Error: graph requires two snapshot files: netdiff graph <good.ndiff> <bad.ndiff> [--ai] [--no-ai]")
 		os.Exit(1)
 	}
 
@@ -453,7 +472,8 @@ func runGraph(args []string) {
 
 	comparison := diff.Compare(snapA, snapB)
 	reasoner := ai.NewReasoner()
-	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
+	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
+	explanation, _ := reasoner.Explain(context.Background(), comparison, useAI)
 
 	p := printer.New()
 	p.PrintGraph(comparison, explanation)
@@ -461,7 +481,8 @@ func runGraph(args []string) {
 
 func runExplain(args []string) {
 	fs := flag.NewFlagSet("explain", flag.ExitOnError)
-	aiFlag := fs.Bool("ai", false, "Enable Gemini AI reasoning layer")
+	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning layer")
+	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
 	validateFlag := fs.Bool("validate", false, "Immediately execute recommended validation probe against target")
 	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
 	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
@@ -473,7 +494,7 @@ func runExplain(args []string) {
 
 	files := fs.Args()
 	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: explain requires two snapshot files: netdiff explain <good.ndiff> <bad.ndiff> [--ai] [--validate]")
+		fmt.Fprintln(os.Stderr, "Error: explain requires two snapshot files: netdiff explain <good.ndiff> <bad.ndiff> [--ai] [--no-ai] [--validate]")
 		os.Exit(1)
 	}
 
@@ -492,7 +513,8 @@ func runExplain(args []string) {
 	comparison := diff.Compare(snapA, snapB)
 
 	reasoner := ai.NewReasoner()
-	explanation, err := reasoner.Explain(context.Background(), comparison, *aiFlag)
+	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
+	explanation, err := reasoner.Explain(context.Background(), comparison, useAI)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error generating explanation: %v\n", err)
 		os.Exit(1)
@@ -615,6 +637,11 @@ func runAsk(args []string) {
 	}
 
 	reasoner := ai.NewReasoner()
+	if !reasoner.HasAPIKey() && !*asJSON {
+		fmt.Printf("%s[NetDiff AI] Running Q&A with built-in causal engine (no Gemini API key detected).%s\n", printer.ColorMuted, printer.ColorReset)
+		fmt.Printf("%sTo enable freeform Gemini conversational reasoning:%s\n", printer.ColorMuted, printer.ColorReset)
+		fmt.Printf("  Run: %snetdiff auth <your-gemini-key>%s\n\n", printer.ColorBold+printer.ColorGreen, printer.ColorReset)
+	}
 	p := printer.New()
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
@@ -724,7 +751,8 @@ func runReport(args []string) {
 	outputFile := fs.String("o", "", "Path to output report file")
 	fs.StringVar(outputFile, "output", "", "Path to output report file")
 	htmlFlag := fs.Bool("html", false, "Generate standalone interactive HTML report")
-	aiFlag := fs.Bool("ai", false, "Use Gemini AI reasoning synthesis layer")
+	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning synthesis layer")
+	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -751,7 +779,8 @@ func runReport(args []string) {
 
 	comparison := diff.Compare(snapA, snapB)
 	reasoner := ai.NewReasoner()
-	explanation, _ := reasoner.Explain(context.Background(), comparison, *aiFlag)
+	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
+	explanation, _ := reasoner.Explain(context.Background(), comparison, useAI)
 
 	isHTML := *htmlFlag
 	if *outputFile != "" {
@@ -932,4 +961,112 @@ func reorderArgs(args []string) []string {
 		}
 	}
 	return append(flags, nonFlags...)
+}
+
+// shouldEnableAI decides whether to run Gemini AI reasoning based on flags and key availability.
+func shouldEnableAI(forceAI, noAI bool, reasoner *ai.Reasoner) bool {
+	if noAI {
+		return false
+	}
+	if reasoner.HasAPIKey() {
+		return true
+	}
+	if forceAI {
+		fmt.Printf("%s[NetDiff AI] No Gemini API key detected.%s\n", printer.ColorYellow, printer.ColorReset)
+		fmt.Printf("  To activate AI reasoning & deep root cause pinpointing:\n")
+		fmt.Printf("    1. Get a free API key at: %shttps://aistudio.google.com/app/apikey%s\n", printer.ColorCyan, printer.ColorReset)
+		fmt.Printf("    2. Save it once: %snetdiff auth <your-key>%s\n", printer.ColorBold+printer.ColorGreen, printer.ColorReset)
+		fmt.Printf("  (Continuing with local deterministic causal engine...)\n\n")
+	}
+	return false
+}
+
+func runAuth(args []string) {
+	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+		key := strings.TrimSpace(args[0])
+		if err := config.SetAPIKey(key); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving API key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("\n%s✓ Successfully saved Gemini API key to ~/.netdiff/config.json%s\n", printer.ColorGreen, printer.ColorReset)
+		fmt.Printf("AI reasoning and deep root cause pinpointing are now %sACTIVE%s by default across all NetDiff commands.\n\n",
+			printer.ColorBold+printer.ColorGreen, printer.ColorReset)
+		return
+	}
+
+	fmt.Printf("\n%sNetDiff AI Authentication Setup%s\n", printer.ColorBold+printer.ColorCyan, printer.ColorReset)
+	fmt.Println("To enable Gemini AI reasoning and deep root-cause pinpointing, get a free API key at:")
+	fmt.Printf("  %shttps://aistudio.google.com/app/apikey%s\n\n", printer.ColorCyan, printer.ColorReset)
+	fmt.Print("Enter your Gemini API Key: ")
+
+	var inputKey string
+	if _, err := fmt.Scanln(&inputKey); err != nil || strings.TrimSpace(inputKey) == "" {
+		fmt.Fprintln(os.Stderr, "\nNo key entered. Configuration aborted.")
+		os.Exit(1)
+	}
+
+	inputKey = strings.TrimSpace(inputKey)
+	if err := config.SetAPIKey(inputKey); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving API key: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\n%s✓ Successfully saved Gemini API key to ~/.netdiff/config.json%s\n", printer.ColorGreen, printer.ColorReset)
+	fmt.Printf("AI reasoning and deep root cause pinpointing are now %sACTIVE%s by default across all NetDiff commands.\n\n",
+		printer.ColorBold+printer.ColorGreen, printer.ColorReset)
+}
+
+func runConfig(args []string) {
+	if len(args) == 0 || args[0] == "show" {
+		cfg, _ := config.Load()
+		activeKey := config.GetAPIKey()
+		source := "not configured"
+		if os.Getenv("GEMINI_API_KEY") != "" {
+			source = "environment (GEMINI_API_KEY)"
+		} else if cfg != nil && cfg.GeminiAPIKey != "" {
+			source = "~/.netdiff/config.json"
+		}
+
+		p, _ := config.Path()
+		fmt.Printf("\n%sNetDiff Configuration%s\n", printer.ColorBold+printer.ColorCyan, printer.ColorReset)
+		fmt.Printf("  Config File:    %s\n", p)
+		fmt.Printf("  Gemini API Key: %s  (%s)\n", config.MaskKey(activeKey), source)
+		model := "gemini-2.5-flash"
+		if cfg != nil && cfg.GeminiModel != "" {
+			model = cfg.GeminiModel
+		}
+		if envModel := os.Getenv("GEMINI_MODEL"); envModel != "" {
+			model = envModel + " (env)"
+		}
+		fmt.Printf("  Gemini Model:   %s\n", model)
+		if activeKey != "" {
+			fmt.Printf("  AI Status:      %sACTIVE%s (automatic AI reasoning enabled by default)\n\n", printer.ColorGreen, printer.ColorReset)
+		} else {
+			fmt.Printf("  AI Status:      %sINACTIVE%s (running local deterministic causal engine)\n", printer.ColorYellow, printer.ColorReset)
+			fmt.Printf("                  Run 'netdiff auth <key>' to enable AI reasoning.\n\n")
+		}
+		return
+	}
+
+	sub := args[0]
+	switch sub {
+	case "set-key":
+		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+			fmt.Fprintln(os.Stderr, "Error: set-key requires an API key argument: netdiff config set-key <key>")
+			os.Exit(1)
+		}
+		if err := config.SetAPIKey(args[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Gemini API key saved to ~/.netdiff/config.json\n")
+	case "clear", "remove-key":
+		if err := config.ClearAPIKey(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error clearing key: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Saved API key removed from ~/.netdiff/config.json\n")
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown config subcommand %q. Use 'show', 'set-key', or 'clear'.\n", sub)
+		os.Exit(1)
+	}
 }

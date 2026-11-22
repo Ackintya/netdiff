@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"netdiff/internal/ai"
 )
 
 func TestSanitizeTarget(t *testing.T) {
@@ -61,5 +63,30 @@ func TestReorderArgs(t *testing.T) {
 	askReordered := reorderArgs(askArgs)
 	if askReordered[0] != "--json" {
 		t.Errorf("expected --json first, got: %v", askReordered)
+	}
+}
+
+func TestShouldEnableAI(t *testing.T) {
+	withKey := &ai.Reasoner{APIKey: "AIzaSyTest12345"}
+	withoutKey := &ai.Reasoner{APIKey: ""}
+
+	// 1. With key, default should be true
+	if !shouldEnableAI(false, false, withKey) {
+		t.Errorf("expected AI to be enabled by default when key is configured")
+	}
+
+	// 2. With key, but --no-ai passed, should be false
+	if shouldEnableAI(false, true, withKey) {
+		t.Errorf("expected --no-ai to disable AI even if key is configured")
+	}
+
+	// 3. Without key, default should be false
+	if shouldEnableAI(false, false, withoutKey) {
+		t.Errorf("expected AI to be disabled when key is not configured")
+	}
+
+	// 4. Without key, even with --ai passed, should return false (after printing prompt)
+	if shouldEnableAI(true, false, withoutKey) {
+		t.Errorf("expected shouldEnableAI to return false when key is missing")
 	}
 }

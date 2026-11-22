@@ -25,6 +25,21 @@ netdiff diagnose 10.10.0.2:8080
 netdiff check 10.10.0.2:8080
 ```
 
+### AI Reasoning Setup (1-Command Setup)
+
+NetDiff integrates Google Gemini to synthesize multi-layered root-cause diagnoses, generate verified remediation playbooks, and answer natural language debugging questions (`netdiff ask`).
+
+Save your free Gemini API key once to activate AI across all commands:
+```bash
+# 1. Get a free key in 10 seconds: https://aistudio.google.com/app/apikey
+# 2. Save it once (persisted securely to ~/.netdiff/config.json):
+netdiff auth AIzaSy...
+
+# Check status anytime:
+netdiff config show
+```
+*(If no API key is configured, NetDiff automatically runs with its built-in local deterministic engine).*
+
 ### Manual Snapshot Workflow
 
 Capture and compare discrete snapshots across hosts or time:
@@ -149,6 +164,8 @@ NetDiff is designed to accurately identify and distinguish between common networ
 | `netdiff report <good> <bad> [-o file] [--html]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff probe <name> [param] [-t <target>]` | Execute a bounded diagnostic validation probe |
+| `netdiff auth [key]` | Configure Gemini API key for AI reasoning and diagnosis |
+| `netdiff config <show|set-key|clear>` | Manage persistent NetDiff configuration (`~/.netdiff/config.json`) |
 | `netdiff version` | Display version information |
 
 ---
