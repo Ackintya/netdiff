@@ -358,12 +358,16 @@ func (p *Printer) PrintGraph(comp *model.ComparisonReport, exp *ai.ExplanationRe
 		if exp.Remediation.ImmediateBash != "" {
 			fmt.Fprintf(p.Out, "  %sImmediate Fix:%s   $ %s%s%s\n", ColorBold, ColorReset, ColorBold+ColorCyan, exp.Remediation.ImmediateBash, ColorReset)
 		}
+		if exp.Remediation.RollbackBash != "" && !strings.HasPrefix(exp.Remediation.RollbackBash, "#") {
+			fmt.Fprintf(p.Out, "  %sRollback Guard:%s  $ %s%s%s\n", ColorBold, ColorReset, ColorYellow, exp.Remediation.RollbackBash, ColorReset)
+		}
 		if exp.Remediation.VerificationCmd != "" {
 			fmt.Fprintf(p.Out, "  %sVerification:%s    $ %s%s%s\n", ColorBold, ColorReset, ColorGreen, exp.Remediation.VerificationCmd, ColorReset)
 		}
 		if exp.Remediation.Explanation != "" {
 			fmt.Fprintf(p.Out, "  %sWhy:%s             %s\n", ColorBold, ColorReset, exp.Remediation.Explanation)
 		}
+		fmt.Fprintf(p.Out, "  %sGuarded Fix:%s     $ %snetdiff fix <good> <bad> --apply%s\n", ColorBold, ColorReset, ColorBold+ColorGreen, ColorReset)
 		fmt.Fprintln(p.Out)
 	}
 }

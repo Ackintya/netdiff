@@ -15,12 +15,16 @@ import (
 	"netdiff/internal/diff"
 	"netdiff/internal/printer"
 	"netdiff/internal/probe"
+	"netdiff/internal/remediation"
 	"netdiff/internal/report"
 	"netdiff/internal/snapshot"
 	"netdiff/internal/target"
 	"netdiff/internal/ui"
+	"netdiff/internal/watch"
 	"netdiff/pkg/model"
 	"netdiff/pkg/version"
+	"os/signal"
+	"syscall"
 )
 
 var appVersion = version.Version
@@ -39,6 +43,9 @@ Commands:
   graph <good> <bad>      Render terminal ASCII/Unicode causal dependency graph
   explain <good> <bad>    Synthesize diagnosis hypotheses and recommend next validation probe
   ask <good> <bad> "<q>"  Ask natural language debugging questions grounded in snapshot evidence
+  fix <good> <bad>        Guarded automated remediation with canary probe & rollback protection
+  fix <target>            Guarded automated remediation for target using baseline snapshot
+  watch <target>          Proactive baseline drift monitor auditing network state continuously
   report <good> <bad>     Generate incident report in markdown or standalone interactive HTML
   ui <good> <bad>         Launch interactive web dashboard visualizing the dual dependency DAGs
   probe <name> [param]    Execute a bounded validation probe from the catalog
@@ -79,6 +86,24 @@ Flags for 'ask':
   -b, --baseline <file>   Use custom baseline .ndiff snapshot (when target is used)
   -j, --json              Output answer as JSON
 
+Flags for 'fix':
+  --dry-run               Simulate and display remediation without modifying system (default)
+  --apply                 Execute verified remediation command
+  -y, --yes               Skip confirmation prompt when running with --apply
+  -b, --baseline <file>   Use custom baseline .ndiff snapshot (when target is used)
+  --timeout <dur>         Timeout for remediation & canary verification (default: 10s)
+  --no-rollback           Disable automated rollback if canary probe fails
+  --ai                    Force Gemini AI reasoning synthesis layer
+  --no-ai                 Disable Gemini AI reasoning and use local deterministic engine
+
+Flags for 'watch':
+  -b, --baseline <file>   Custom baseline snapshot (default: ~/.netdiff/baselines/<target>.ndiff)
+  --interval <duration>   Audit polling interval (default: 30s)
+  --count <n>             Stop after N audits (default: 0, runs indefinitely until Ctrl+C)
+  --alert-on-divergence   Trigger audio bell alert on drift detection
+  --json                  Stream events as line-delimited JSON (NDJSON)
+  --once                  Audit baseline drift once and exit (exit 0: healthy, 2: drift detected)
+
 Flags for 'report':
   -o, --output <file>     Output report to file instead of stdout
   --html                  Generate standalone interactive HTML report (offline-capable)
@@ -108,6 +133,11 @@ Examples:
   netdiff explain host-a.ndiff host-b.ndiff --validate
   netdiff ask host-a.ndiff host-b.ndiff "Why is the connection timing out?"
   netdiff ask api.internal.corp:443 "Is this blocked by firewall or routing?"
+  netdiff fix host-a.ndiff host-b.ndiff --dry-run
+  netdiff fix host-a.ndiff host-b.ndiff --apply -y
+  netdiff fix api.internal.corp:443 --apply
+  netdiff watch api.internal.corp:443 --interval 15s
+  netdiff watch api.internal.corp:443 --once
   netdiff report host-a.ndiff host-b.ndiff -o incident.md
   netdiff ui host-a.ndiff host-b.ndiff -p 8080
   netdiff probe TEST_INTERFACE_STATE eth0
@@ -155,6 +185,12 @@ func main() {
 
 	case "ask":
 		runAsk(os.Args[2:])
+
+	case "fix":
+		runFix(os.Args[2:])
+
+	case "watch":
+		runWatch(os.Args[2:])
 
 	case "report":
 		runReport(os.Args[2:])
@@ -746,6 +782,287 @@ func runAsk(args []string) {
 	p.PrintAsk(comparison.Target.Raw, question, answer)
 }
 
+func runFix(args []string) {
+	fs := flag.NewFlagSet("fix", flag.ExitOnError)
+	dryRun := fs.Bool("dry-run", false, "Simulate and display remediation without modifying system")
+	apply := fs.Bool("apply", false, "Execute verified remediation command")
+	yes := fs.Bool("y", false, "Skip confirmation prompt when running with --apply")
+	fs.BoolVar(yes, "yes", false, "Skip confirmation prompt when running with --apply")
+	baselineFile := fs.String("b", "", "Custom baseline .ndiff snapshot file")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline .ndiff snapshot file")
+	timeout := fs.Duration("timeout", 10*time.Second, "Timeout for remediation & canary verification")
+	noRollback := fs.Bool("no-rollback", false, "Disable automated rollback if canary probe fails")
+	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning synthesis layer")
+	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: 'fix' requires either:")
+		fmt.Fprintln(os.Stderr, "  netdiff fix <good.ndiff> <bad.ndiff> [--dry-run|--apply]")
+		fmt.Fprintln(os.Stderr, "  netdiff fix <target> [--dry-run|--apply]")
+		os.Exit(1)
+	}
+
+	ctx := context.Background()
+	reasoner := ai.NewReasoner()
+	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
+	p := printer.New()
+
+	var comparison *model.ComparisonReport
+	var tgt model.Target
+
+	if len(remaining) >= 2 {
+		// Two snapshots: good.ndiff and bad.ndiff
+		snapA, err := snapshot.Load(remaining[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", remaining[0], err)
+			os.Exit(1)
+		}
+		snapB, err := snapshot.Load(remaining[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", remaining[1], err)
+			os.Exit(1)
+		}
+		comparison = diff.Compare(snapA, snapB)
+		tgt = comparison.Target
+	} else {
+		// Single argument: target (e.g. host:port)
+		var err error
+		tgt, err = target.Parse(remaining[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", remaining[0], err)
+			os.Exit(1)
+		}
+
+		bPath := *baselineFile
+		if bPath == "" {
+			bPath, err = defaultBaselinePath(tgt.Raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error determining baseline path: %v\n", err)
+				os.Exit(1)
+			}
+		}
+
+		if _, err := os.Stat(bPath); os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Baseline snapshot not found at %s.\nRun 'netdiff diagnose %s' first to capture a working baseline, or pass two snapshots:\n  netdiff fix <good.ndiff> <bad.ndiff> --apply\n", bPath, tgt.Raw)
+			os.Exit(1)
+		}
+
+		baseSnap, err := snapshot.Load(bPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Capturing current network state for %s...\n", tgt.Raw)
+		capCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		engine := probe.NewEngine()
+		currSnap, err := engine.Capture(capCtx, tgt)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error capturing current state: %v\n", err)
+			os.Exit(1)
+		}
+
+		comparison = diff.Compare(baseSnap, currSnap)
+	}
+
+	explanation, err := reasoner.Explain(ctx, comparison, useAI)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error synthesizing remediation plan: %v\n", err)
+		os.Exit(1)
+	}
+
+	if explanation.Remediation == nil || strings.TrimSpace(explanation.Remediation.ImmediateBash) == "" {
+		fmt.Printf("\n%sNo actionable remediation required — network path to %s matches baseline.%s\n\n", printer.ColorGreen, tgt.Raw, printer.ColorReset)
+		return
+	}
+
+	isApply := *apply
+	// Confirmation prompt if apply is requested without -y / --yes
+	if isApply && !*yes {
+		fmt.Printf("\n%s%sProposed Remediation Plan for %s:%s\n", printer.ColorBold, printer.ColorCyan, tgt.Raw, printer.ColorReset)
+		fmt.Printf("  Command:  $ %s%s%s\n", printer.ColorBold, explanation.Remediation.ImmediateBash, printer.ColorReset)
+		if explanation.Remediation.RollbackBash != "" && !strings.HasPrefix(explanation.Remediation.RollbackBash, "#") {
+			fmt.Printf("  Rollback: $ %s%s%s\n", printer.ColorYellow, explanation.Remediation.RollbackBash, printer.ColorReset)
+		}
+		if explanation.Remediation.Explanation != "" {
+			fmt.Printf("  Why:      %s\n", explanation.Remediation.Explanation)
+		}
+		fmt.Print("\nApply this remediation command with automatic rollback protection? [y/N]: ")
+		var answer string
+		_, _ = fmt.Scanln(&answer)
+		answer = strings.ToLower(strings.TrimSpace(answer))
+		if answer != "y" && answer != "yes" {
+			fmt.Println("Remediation aborted by operator.")
+			return
+		}
+	}
+
+	executor := remediation.NewExecutor(remediation.FixOptions{
+		DryRun:       *dryRun || !isApply,
+		Apply:        isApply,
+		AutoRollback: !*noRollback,
+		Timeout:      *timeout,
+	})
+
+	fixRes, fixErr := executor.Execute(ctx, explanation.Remediation, tgt)
+	if fixRes != nil {
+		p.PrintFixResult(fixRes)
+	}
+
+	if fixErr != nil {
+		os.Exit(1)
+	}
+	if fixRes != nil && fixRes.Status == remediation.FixStatusCanaryFailedRolledBack {
+		os.Exit(2)
+	}
+}
+
+func runWatch(args []string) {
+	fs := flag.NewFlagSet("watch", flag.ExitOnError)
+	baselineFile := fs.String("b", "", "Custom baseline .ndiff snapshot file")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline .ndiff snapshot file")
+	interval := fs.Duration("interval", 30*time.Second, "Audit polling interval")
+	count := fs.Int("count", 0, "Stop after N audits (0 = continuous)")
+	alertOnDiv := fs.Bool("alert-on-divergence", false, "Trigger audio bell alert on drift detection")
+	asJSON := fs.Bool("json", false, "Stream events as line-delimited JSON")
+	once := fs.Bool("once", false, "Audit baseline drift once and exit")
+
+	args = reorderArgs(args)
+	if err := fs.Parse(args); err != nil {
+		os.Exit(1)
+	}
+
+	remaining := fs.Args()
+	if len(remaining) < 1 {
+		fmt.Fprintln(os.Stderr, "Error: watch requires a target in 'host:port' format (e.g. netdiff watch api.corp:443)")
+		os.Exit(1)
+	}
+
+	tgt, err := target.Parse(remaining[0])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", remaining[0], err)
+		os.Exit(1)
+	}
+
+	bPath := *baselineFile
+	if bPath == "" {
+		bPath, err = defaultBaselinePath(tgt.Raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error determining baseline path: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	engine := probe.NewEngine()
+
+	// If baseline file does not exist, capture initial baseline now!
+	if _, err := os.Stat(bPath); os.IsNotExist(err) {
+		if !*asJSON {
+			fmt.Printf("Baseline not found at %s.\nCapturing initial baseline snapshot for %s...\n", bPath, tgt.Raw)
+		}
+		capCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		snap, err := engine.Capture(capCtx, tgt)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error capturing baseline: %v\n", err)
+			os.Exit(1)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(bPath), 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating baseline directory: %v\n", err)
+			os.Exit(1)
+		}
+		if err := snapshot.Save(bPath, snap); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving baseline: %v\n", err)
+			os.Exit(1)
+		}
+		if !*asJSON {
+			fmt.Printf("✓ Baseline snapshot saved to %s\n\n", bPath)
+		}
+	}
+
+	baseSnap, err := snapshot.Load(bPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+		os.Exit(1)
+	}
+
+	cfg := watch.WatchConfig{
+		Target:            tgt,
+		Baseline:          baseSnap,
+		BaselinePath:      bPath,
+		Interval:          *interval,
+		Count:             *count,
+		AlertOnDivergence: *alertOnDiv,
+		JSONOutput:        *asJSON,
+		Engine:            engine,
+		Writer:            os.Stdout,
+	}
+
+	if *once {
+		auditCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		event, err := watch.AuditOnce(auditCtx, cfg)
+		if err != nil && event.Status == "CAPTURE_ERROR" {
+			if *asJSON {
+				data, _ := json.Marshal(event)
+				fmt.Println(string(data))
+			} else {
+				fmt.Fprintf(os.Stderr, "Audit error: %v\n", err)
+			}
+			os.Exit(1)
+		} else if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		if *asJSON {
+			data, _ := json.Marshal(event)
+			fmt.Println(string(data))
+			if !event.Healthy {
+				os.Exit(2)
+			}
+		} else {
+			ts := event.Timestamp.Format("2006-01-02 15:04:05")
+			if event.Healthy {
+				fmt.Printf("[%s] %s[OK]%s %s - %s\n", ts, printer.ColorBold+printer.ColorGreen, printer.ColorReset, event.Target, event.Summary)
+			} else {
+				fmt.Printf("[%s] %s[ALERT - DRIFT DETECTED]%s %s\n", ts, printer.ColorBold+printer.ColorRed, printer.ColorReset, event.Target)
+				if event.EarliestDivergence != "" {
+					fmt.Printf("  Earliest Divergence: %s\n", event.EarliestDivergence)
+				}
+				for _, d := range event.Differences {
+					fmt.Printf("  • [%s] %s: working=%q failing=%q\n", d.Category, d.Field, d.WorkingValue, d.FailingValue)
+				}
+				if event.RemediationCmd != "" {
+					fmt.Printf("  Remediation: $ %s\n", event.RemediationCmd)
+				}
+				os.Exit(2)
+			}
+		}
+		return
+	}
+
+	// Continuous watch with graceful signal handling
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := watch.Watch(ctx, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Watch error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
 func runReport(args []string) {
 	fs := flag.NewFlagSet("report", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Path to output report file")
@@ -952,7 +1269,7 @@ func reorderArgs(args []string) []string {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port" || arg == "-b" || arg == "--baseline") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port" || arg == "-b" || arg == "--baseline" || arg == "--interval" || arg == "--count" || arg == "--timeout") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}

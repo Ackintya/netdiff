@@ -1,0 +1,286 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="canvasBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#050811" />
+      <stop offset="50%" stop-color="#0A101D" />
+      <stop offset="100%" stop-color="#060A14" />
+    </linearGradient>
+
+    <!-- Card Gradients -->
+    <linearGradient id="cardGrad1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#090E17" />
+    </linearGradient>
+
+    <linearGradient id="cardGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#0B0F19" />
+    </linearGradient>
+
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5FF" />
+      <stop offset="100%" stop-color="#00E676" />
+    </linearGradient>
+
+    <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <!-- Drop Shadows -->
+    <filter id="softGlow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+
+    <style>
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; }
+      .font-sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="780" fill="url(#canvasBg)" />
+
+  <!-- Subtle Blueprint Grid Lines -->
+  <g stroke="#1E293B" stroke-width="1" stroke-dasharray="3 6" opacity="0.25">
+    <line x1="50" y1="110" x2="1150" y2="110" />
+    <line x1="50" y1="710" x2="1150" y2="710" />
+    <line x1="410" y1="110" x2="410" y2="710" />
+    <line x1="790" y1="110" x2="790" y2="710" />
+  </g>
+
+  <!-- HEADER SECTION -->
+  <g id="header">
+    <rect x="50" y="28" width="56" height="56" rx="12" fill="#0E1626" stroke="#00E5FF" stroke-width="1.5" />
+    <path d="M 64 68 L 74 44 L 84 58 L 94 44" fill="none" stroke="#00E5FF" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="74" cy="44" r="3" fill="#00E676" />
+    <circle cx="94" cy="44" r="3" fill="#00E5FF" />
+
+    <text x="120" y="55" fill="url(#cyanGrad)" font-size="28" font-weight="900" letter-spacing="-0.5" class="font-sans">NETDIFF ARCHITECTURE</text>
+    <text x="120" y="76" fill="#94A3B8" font-size="14" font-weight="500" class="font-sans">Semantic Network Differential Engine · Directed Acyclic Causal Graph · Closed-Loop SRE Automation</text>
+
+    <!-- Version & Tag badges -->
+    <rect x="1000" y="38" width="80" height="26" rx="6" fill="#0E1E2E" stroke="#00E5FF" stroke-width="1" />
+    <text x="1040" y="55" text-anchor="middle" fill="#00E5FF" font-size="12" font-weight="800" class="font-mono">v0.4.0</text>
+
+    <rect x="1090" y="38" width="60" height="26" rx="6" fill="#064E3B" stroke="#10B981" stroke-width="1" />
+    <text x="1120" y="55" text-anchor="middle" fill="#A7F3D0" font-size="12" font-weight="800" class="font-mono">GO</text>
+  </g>
+
+  <!-- ========================================== -->
+  <!-- COLUMN 1: 8-LAYER NETWORK CAUSAL PIPELINE -->
+  <!-- ========================================== -->
+  <g id="col1" filter="url(#softGlow)">
+    <rect x="50" y="110" width="340" height="590" rx="14" fill="url(#cardGrad1)" stroke="#334155" stroke-width="1.5" />
+    
+    <!-- Col 1 Header -->
+    <rect x="50" y="110" width="340" height="42" rx="14" fill="#1E293B" opacity="0.6" />
+    <circle cx="72" cy="131" r="5" fill="#00E5FF" />
+    <text x="86" y="136" fill="#F8FAFC" font-size="14" font-weight="800" class="font-sans">8-LAYER CAUSAL FLOW</text>
+    <text x="370" y="136" text-anchor="end" fill="#64748B" font-size="11" class="font-mono">DAG ORDER</text>
+
+    <!-- Layer 1 -->
+    <g transform="translate(65, 165)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">1</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">DNS Resolution</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">Nameservers, latency, A/AAAA records</text>
+    </g>
+
+    <!-- Layer 2 -->
+    <g transform="translate(65, 225)">
+      <rect width="310" height="50" rx="8" fill="#1A1523" stroke="#F59E0B" stroke-width="1.5" />
+      <circle cx="20" cy="25" r="9" fill="#D97706" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">2</text>
+      <text x="40" y="22" fill="#FDE68A" font-size="12" font-weight="700" class="font-sans">IP Policy Routing (ip rule)</text>
+      <text x="40" y="38" fill="#F59E0B" font-size="10" font-weight="600" class="font-mono">Rule priority, table 1-255 isolation</text>
+    </g>
+
+    <!-- Layer 3 -->
+    <g transform="translate(65, 285)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">3</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">Kernel FIB Routing Tables</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">Prefix match, egress dev, gateway, metric</text>
+    </g>
+
+    <!-- Layer 4 -->
+    <g transform="translate(65, 345)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">4</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">Network Interfaces &amp; MTU</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">OperState UP/DOWN, tunnel role, MTU</text>
+    </g>
+
+    <!-- Layer 5 -->
+    <g transform="translate(65, 405)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">5</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">Neighbor Table (ARP / NDP)</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">L2 MAC mapping, REACHABLE vs FAILED</text>
+    </g>
+
+    <!-- Layer 6 -->
+    <g transform="translate(65, 465)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">6</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">Host Firewall Filtering</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">nftables, iptables, OUTPUT drop rules</text>
+    </g>
+
+    <!-- Layer 7 -->
+    <g transform="translate(65, 525)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">7</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">TLS Handshake &amp; X.509</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">TLS 1.3/1.2, Root CA trust, SAN validation</text>
+    </g>
+
+    <!-- Layer 8 -->
+    <g transform="translate(65, 585)">
+      <rect width="310" height="50" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <circle cx="20" cy="25" r="9" fill="#0284C7" />
+      <text x="20" y="29" text-anchor="middle" fill="#FFFFFF" font-size="10" font-weight="800" class="font-mono">8</text>
+      <text x="40" y="22" fill="#E2E8F0" font-size="12" font-weight="700" class="font-sans">TCP Socket &amp; TCP_INFO</text>
+      <text x="40" y="38" fill="#64748B" font-size="10" class="font-mono">Status, latency, RTTus, retrans, pmtu</text>
+    </g>
+
+    <text x="220" y="670" text-anchor="middle" fill="#00E5FF" font-size="11" font-weight="700" class="font-mono">EVALUATED IN SEQUENCE</text>
+  </g>
+
+  <!-- Connector Line 1 to 2 -->
+  <path d="M 390 405 L 430 405" stroke="#00E5FF" stroke-width="2" stroke-dasharray="4 4" marker-end="url(#arrow)" />
+
+  <!-- ========================================== -->
+  <!-- COLUMN 2: DUAL-CORE DIAGNOSTIC ENGINE     -->
+  <!-- ========================================== -->
+  <g id="col2" filter="url(#softGlow)">
+    <rect x="430" y="110" width="340" height="590" rx="14" fill="url(#cardGrad2)" stroke="#334155" stroke-width="1.5" />
+    
+    <!-- Col 2 Header -->
+    <rect x="430" y="110" width="340" height="42" rx="14" fill="#1E293B" opacity="0.6" />
+    <circle cx="452" cy="131" r="5" fill="#10B981" />
+    <text x="466" y="136" fill="#F8FAFC" font-size="14" font-weight="800" class="font-sans">DUAL DIAGNOSTIC CORES</text>
+    <text x="750" y="136" text-anchor="end" fill="#64748B" font-size="11" class="font-mono">HYBRID</text>
+
+    <!-- Core A: Local Deterministic Causal Engine -->
+    <g transform="translate(445, 165)">
+      <rect width="310" height="235" rx="10" fill="#061A28" stroke="#00E5FF" stroke-width="1.5" />
+      <rect x="15" y="14" width="80" height="20" rx="4" fill="#0369A1" />
+      <text x="55" y="28" text-anchor="middle" fill="#E0F2FE" font-size="10" font-weight="800" class="font-mono">100% OFFLINE</text>
+      <text x="105" y="29" fill="#38BDF8" font-size="14" font-weight="800" class="font-sans">Causal DAG Engine</text>
+
+      <text x="15" y="60" fill="#94A3B8" font-size="11" font-weight="600" class="font-sans">Zero Dependencies · Runs Local Airgapped</text>
+
+      <rect x="15" y="74" width="280" height="1" fill="#1E3A5F" />
+
+      <!-- Features list -->
+      <text x="15" y="98" fill="#E2E8F0" font-size="11" class="font-mono">✓ Topological DAG ordering</text>
+      <text x="15" y="118" fill="#E2E8F0" font-size="11" class="font-mono">✓ Earliest divergence isolation</text>
+      <text x="15" y="138" fill="#E2E8F0" font-size="11" class="font-mono">✓ Noise filtering (94 diffs → 2)</text>
+      <text x="15" y="158" fill="#E2E8F0" font-size="11" class="font-mono">✓ Bounded safe probe recommendation</text>
+      <text x="15" y="178" fill="#E2E8F0" font-size="11" class="font-mono">✓ Actionable Bash remediation</text>
+      <text x="15" y="198" fill="#E2E8F0" font-size="11" class="font-mono">✓ Automated rollback synthesis</text>
+
+      <rect x="15" y="208" width="280" height="18" rx="4" fill="#082F49" />
+      <text x="155" y="221" text-anchor="middle" fill="#38BDF8" font-size="10" font-weight="700" class="font-mono">BENCHMARK: 15ms EVALUATION</text>
+    </g>
+
+    <!-- Core B: Bounded Gemini Reasoning Layer -->
+    <g transform="translate(445, 415)">
+      <rect width="310" height="260" rx="10" fill="#170F28" stroke="#A855F7" stroke-width="1.5" />
+      <rect x="15" y="14" width="90" height="20" rx="4" fill="#6B21A8" />
+      <text x="60" y="28" text-anchor="middle" fill="#F3E8FF" font-size="10" font-weight="800" class="font-mono">AI REASONING</text>
+      <text x="115" y="29" fill="#C084FC" font-size="14" font-weight="800" class="font-sans">Gemini Reasoning</text>
+
+      <text x="15" y="60" fill="#94A3B8" font-size="11" font-weight="600" class="font-sans">Type-Safe Schema · Zero Hallucinations</text>
+
+      <rect x="15" y="74" width="280" height="1" fill="#3B1D5A" />
+
+      <text x="15" y="98" fill="#E2E8F0" font-size="11" class="font-mono">✓ Deep root cause hypotheses</text>
+      <text x="15" y="118" fill="#E2E8F0" font-size="11" class="font-mono">✓ Confidence scores [████░░] 85%</text>
+      <text x="15" y="138" fill="#E2E8F0" font-size="11" class="font-mono">✓ netdiff ask conversational Q&amp;A</text>
+      <text x="15" y="158" fill="#E2E8F0" font-size="11" class="font-mono">✓ Grounded evidence bundle input</text>
+      <text x="15" y="178" fill="#E2E8F0" font-size="11" class="font-mono">✓ Adaptive playbook synthesis</text>
+      <text x="15" y="198" fill="#E2E8F0" font-size="11" class="font-mono">✓ Persistent netdiff auth config</text>
+
+      <rect x="15" y="214" width="280" height="32" rx="6" fill="#2E1065" stroke="#7C3AED" stroke-width="1" />
+      <text x="155" y="234" text-anchor="middle" fill="#E9D5FF" font-size="11" font-weight="700" class="font-mono">$ netdiff ask &quot;Is this firewall?&quot;</text>
+    </g>
+  </g>
+
+  <!-- Connector Line 2 to 3 -->
+  <path d="M 770 405 L 810 405" stroke="#00E676" stroke-width="2" stroke-dasharray="4 4" />
+
+  <!-- ========================================== -->
+  <!-- COLUMN 3: AUTOMATION, FIX & MONITORING   -->
+  <!-- ========================================== -->
+  <g id="col3" filter="url(#softGlow)">
+    <rect x="810" y="110" width="340" height="590" rx="14" fill="url(#cardGrad1)" stroke="#334155" stroke-width="1.5" />
+    
+    <!-- Col 3 Header -->
+    <rect x="810" y="110" width="340" height="42" rx="14" fill="#1E293B" opacity="0.6" />
+    <circle cx="832" cy="131" r="5" fill="#F59E0B" />
+    <text x="846" y="136" fill="#F8FAFC" font-size="14" font-weight="800" class="font-sans">CLOSED-LOOP SRE TOOLING</text>
+    <text x="1130" y="136" text-anchor="end" fill="#64748B" font-size="11" class="font-mono">ACTIONS</text>
+
+    <!-- Action 1: netdiff graph -->
+    <g transform="translate(825, 165)">
+      <rect width="310" height="88" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <text x="15" y="26" fill="#00E5FF" font-size="13" font-weight="800" class="font-mono">$ netdiff graph</text>
+      <text x="15" y="46" fill="#E2E8F0" font-size="12" font-weight="600" class="font-sans">Visual Terminal Causal Tree</text>
+      <text x="15" y="66" fill="#94A3B8" font-size="11" class="font-mono">Renders ASCII DAG divergence flow, highlighted root causes, and verification hints.</text>
+    </g>
+
+    <!-- Action 2: netdiff fix (GUARDED REMEDIATION) -->
+    <g transform="translate(825, 265)">
+      <rect width="310" height="125" rx="8" fill="#062419" stroke="#10B981" stroke-width="1.5" />
+      <text x="15" y="26" fill="#34D399" font-size="13" font-weight="800" class="font-mono">$ netdiff fix --apply</text>
+      <rect x="220" y="12" width="75" height="18" rx="4" fill="#065F46" />
+      <text x="257" y="25" text-anchor="middle" fill="#A7F3D0" font-size="9" font-weight="800" class="font-mono">NEW · CORE</text>
+
+      <text x="15" y="48" fill="#F8FAFC" font-size="12" font-weight="700" class="font-sans">Guarded Automated Remediation</text>
+      <text x="15" y="68" fill="#CBD5E1" font-size="11" class="font-mono">1. Safely applies verified bash fix</text>
+      <text x="15" y="86" fill="#CBD5E1" font-size="11" class="font-mono">2. Runs canary target socket probe</text>
+      <text x="15" y="104" fill="#FCD34D" font-size="11" font-weight="700" class="font-mono">3. Auto-rollback if probe fails!</text>
+    </g>
+
+    <!-- Action 3: netdiff watch (PROACTIVE MONITOR) -->
+    <g transform="translate(825, 402)">
+      <rect width="310" height="125" rx="8" fill="#20170A" stroke="#F59E0B" stroke-width="1.5" />
+      <text x="15" y="26" fill="#FBBF24" font-size="13" font-weight="800" class="font-mono">$ netdiff watch</text>
+      <rect x="220" y="12" width="75" height="18" rx="4" fill="#78350F" />
+      <text x="257" y="25" text-anchor="middle" fill="#FEF3C7" font-size="9" font-weight="800" class="font-mono">NEW · CORE</text>
+
+      <text x="15" y="48" fill="#F8FAFC" font-size="12" font-weight="700" class="font-sans">Proactive Baseline Drift Auditor</text>
+      <text x="15" y="68" fill="#CBD5E1" font-size="11" class="font-mono">Continuous or periodic target audit</text>
+      <text x="15" y="86" fill="#CBD5E1" font-size="11" class="font-mono">Alerts on route / DNS / state drift</text>
+      <text x="15" y="104" fill="#FBBF24" font-size="11" class="font-mono">Streams NDJSON to SIEM &amp; logging</text>
+    </g>
+
+    <!-- Action 4: netdiff report --html -->
+    <g transform="translate(825, 540)">
+      <rect width="310" height="92" rx="8" fill="#0B1321" stroke="#1E293B" stroke-width="1" />
+      <text x="15" y="26" fill="#00E5FF" font-size="13" font-weight="800" class="font-mono">$ netdiff report --html</text>
+      <text x="15" y="48" fill="#E2E8F0" font-size="12" font-weight="600" class="font-sans">Standalone Interactive Incident Report</text>
+      <text x="15" y="68" fill="#94A3B8" font-size="11" class="font-mono">Zero CDN, embedded styles, SVG causal graph, shareable offline incident artifact.</text>
+    </g>
+
+    <text x="980" y="670" text-anchor="middle" fill="#10B981" font-size="11" font-weight="700" class="font-mono">SOLVES &quot;WORKS ON MY MACHINE&quot;</text>
+  </g>
+
+  <!-- ========================================== -->
+  <!-- FOOTER BAR                                 -->
+  <!-- ========================================== -->
+  <g id="footer" transform="translate(50, 720)">
+    <text x="0" y="20" fill="#64748B" font-size="12" class="font-mono">NetDiff: Linux Network Namespaces · Kernel TCP_INFO · 100% Offline-First · MIT License</text>
+    <text x="1100" y="20" text-anchor="end" fill="#00E5FF" font-size="12" font-weight="700" class="font-mono">https://github.com/Ackintya/netdiff</text>
+  </g>
+</svg>

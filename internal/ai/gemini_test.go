@@ -456,8 +456,37 @@ func TestExplain_RemediationCoverage(t *testing.T) {
 	if !strings.Contains(expPolicy.Remediation.ImmediateBash, "ip rule add to 10.40.8.21/32 lookup 200") {
 		t.Errorf("unexpected policy bash: %s", expPolicy.Remediation.ImmediateBash)
 	}
+	if !strings.Contains(expPolicy.Remediation.RollbackBash, "ip rule del to 10.40.8.21/32 lookup 200") {
+		t.Errorf("unexpected policy rollback bash: %s", expPolicy.Remediation.RollbackBash)
+	}
 	if !strings.Contains(expPolicy.Remediation.PermanentConfig, "routing-policy") {
 		t.Errorf("expected netplan routing policy, got: %s", expPolicy.Remediation.PermanentConfig)
+	}
+
+	// Test Policy Remediation with Hostname Target and Destination IP Resolution
+	policyHostnameRep := &model.ComparisonReport{
+		Target: model.Target{Raw: "api.internal.company:443", Host: "api.internal.company", Port: 443, IsIP: false},
+		WorkingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{DestinationIP: "10.40.8.21", EgressInterface: "tun0", Table: 200, Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusConnected},
+		},
+		FailingSnapshot: &model.Snapshot{
+			Route: &model.RouteReport{DestinationIP: "10.40.8.21", EgressInterface: "eth0", Table: 254, Success: true},
+			TCP:   &model.TCPReport{Status: model.TCPStatusTimeout},
+		},
+		Differences: []model.Difference{
+			{Category: "Policy", Field: "policy_rule", WorkingValue: "to 10.40.0.0/16 lookup 200", FailingValue: "missing", Relevance: model.RelevanceHigh},
+		},
+	}
+	expPolicyHost, err := reasoner.Explain(context.Background(), policyHostnameRep, false)
+	if err != nil || expPolicyHost.Remediation == nil {
+		t.Fatalf("expected policy remediation for hostname, got err: %v", err)
+	}
+	if !strings.Contains(expPolicyHost.Remediation.ImmediateBash, "ip rule add to 10.40.8.21/32 lookup 200") {
+		t.Errorf("expected resolved IP in policy bash, got: %s", expPolicyHost.Remediation.ImmediateBash)
+	}
+	if !strings.Contains(expPolicyHost.Remediation.RollbackBash, "ip rule del to 10.40.8.21/32 lookup 200") {
+		t.Errorf("expected resolved IP in rollback bash, got: %s", expPolicyHost.Remediation.RollbackBash)
 	}
 
 	// Test Firewall Remediation
@@ -475,6 +504,9 @@ func TestExplain_RemediationCoverage(t *testing.T) {
 	}
 	if !strings.Contains(expFW.Remediation.ImmediateBash, "iptables -D OUTPUT -p tcp --dport 443 -j DROP") {
 		t.Errorf("unexpected firewall bash: %s", expFW.Remediation.ImmediateBash)
+	}
+	if !strings.Contains(expFW.Remediation.RollbackBash, "iptables -A OUTPUT -p tcp --dport 443 -j DROP") {
+		t.Errorf("unexpected firewall rollback bash: %s", expFW.Remediation.RollbackBash)
 	}
 
 	// Test Interface Remediation
@@ -498,6 +530,9 @@ func TestExplain_RemediationCoverage(t *testing.T) {
 	}
 	if !strings.Contains(expIface.Remediation.ImmediateBash, "ip link set dev eth1 up") {
 		t.Errorf("unexpected iface bash: %s", expIface.Remediation.ImmediateBash)
+	}
+	if !strings.Contains(expIface.Remediation.RollbackBash, "ip link set dev eth1 down") {
+		t.Errorf("unexpected iface rollback bash: %s", expIface.Remediation.RollbackBash)
 	}
 }
 

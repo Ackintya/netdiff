@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 860" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="termBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080C14" />
+      <stop offset="50%" stop-color="#0B1120" />
+      <stop offset="100%" stop-color="#05080F" />
+    </linearGradient>
+
+    <!-- Header Gradient -->
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <!-- Accent Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="4" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="boxShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#000000" flood-opacity="0.65" />
+    </filter>
+
+    <style>
+      .font-mono { font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; }
+      .font-sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    </style>
+  </defs>
+
+  <!-- Canvas Background -->
+  <rect width="1200" height="860" fill="#030712" />
+
+  <!-- Outer Window Container with Drop Shadow -->
+  <g filter="url(#boxShadow)">
+    <rect x="40" y="30" width="1120" height="800" rx="16" fill="url(#termBg)" stroke="#1E293B" stroke-width="2" />
+  </g>
+
+  <!-- Terminal Window Title Bar -->
+  <path d="M 40 46 A 16 16 0 0 1 56 30 L 1144 30 A 16 16 0 0 1 1160 46 L 1160 76 L 40 76 Z" fill="url(#headerGrad)" stroke="#1E293B" stroke-width="1" />
+  
+  <!-- Window Control Buttons (macOS style) -->
+  <circle cx="68" cy="53" r="6.5" fill="#EF4444" />
+  <circle cx="89" cy="53" r="6.5" fill="#F59E0B" />
+  <circle cx="110" cy="53" r="6.5" fill="#10B981" />
+
+  <!-- Terminal Title -->
+  <text x="600" y="58" text-anchor="middle" fill="#94A3B8" font-size="13" font-weight="600" class="font-mono">zsh - netdiff diagnose api.internal.corp:443 --graph</text>
+  <rect x="1080" y="44" width="60" height="18" rx="4" fill="#1E293B" />
+  <text x="1110" y="57" text-anchor="middle" fill="#00E5FF" font-size="10" font-weight="700" class="font-mono">v0.4.0</text>
+
+  <!-- Terminal Body Content -->
+  <!-- Header Banner Command -->
+  <text x="75" y="112" fill="#00E5FF" font-size="14" font-weight="700" class="font-mono">$</text>
+  <text x="92" y="112" fill="#F8FAFC" font-size="14" font-weight="600" class="font-mono">netdiff diagnose api.internal.corp:443 --graph</text>
+
+  <!-- Target & Path Info Box -->
+  <rect x="75" y="128" width="1050" height="42" rx="8" fill="#0E1626" stroke="#334155" stroke-width="1" />
+  <text x="95" y="154" fill="#94A3B8" font-size="13" class="font-mono">Target: <tspan fill="#F8FAFC" font-weight="700">api.internal.corp:443</tspan> (port: 443, proto: tcp)</text>
+  <text x="560" y="154" fill="#94A3B8" font-size="13" class="font-mono">Path: <tspan fill="#10B981" font-weight="700">[WORKING]</tspan> host-a  vs  <tspan fill="#EF4444" font-weight="700">[FAILING]</tspan> host-b</text>
+
+  <!-- Causal Graph Nodes -->
+  <!-- Node 1: DNS Resolution -->
+  <circle cx="95" cy="198" r="5" fill="#10B981" />
+  <text x="115" y="202" fill="#10B981" font-size="13" font-weight="700" class="font-mono">[1] DNS Resolution</text>
+  <text x="320" y="202" fill="#64748B" font-size="13" class="font-mono">[MATCH]</text>
+  <text x="400" y="202" fill="#94A3B8" font-size="13" class="font-mono">10.40.8.21 (resolved in 4ms via 10.8.0.1)</text>
+
+  <!-- Flow Line 1 to 2 -->
+  <line x1="95" y1="208" x2="95" y2="228" stroke="#334155" stroke-width="2" stroke-dasharray="2 3" />
+
+  <!-- Node 2: Policy Routing (Earliest Divergence / ROOT CAUSE) -->
+  <rect x="75" y="234" width="1050" height="92" rx="8" fill="#1A1523" stroke="#F59E0B" stroke-width="1.5" />
+  <circle cx="95" cy="254" r="5" fill="#EF4444" filter="url(#neonGlow)" />
+  <text x="115" y="258" fill="#EF4444" font-size="13" font-weight="700" class="font-mono">[2] Policy Routing (ip rule)</text>
+  <text x="360" y="258" fill="#F59E0B" font-size="12" font-weight="700" class="font-mono">[DIVERGENT]</text>
+  <text x="480" y="258" fill="#F8FAFC" font-size="13" font-weight="600" class="font-mono">from all to 10.40.0.0/16 lookup 200 ≠ default main</text>
+  <rect x="915" y="244" width="190" height="22" rx="4" fill="#B45309" />
+  <text x="1010" y="259" text-anchor="middle" fill="#FEF3C7" font-size="11" font-weight="800" class="font-mono">◄── EARLIEST DIVERGENCE</text>
+
+  <!-- Sub-tree details inside Policy Node -->
+  <text x="115" y="280" fill="#94A3B8" font-size="12" class="font-mono">  ├── ✗ Routing Table:</text>
+  <text x="320" y="280" fill="#CBD5E1" font-size="12" class="font-mono">table 200 (vpn_table)  ≠  table 254 (main)</text>
+
+  <text x="115" y="298" fill="#94A3B8" font-size="12" class="font-mono">  ├── ✗ Egress Interface:</text>
+  <text x="320" y="298" fill="#10B981" font-size="12" font-weight="700" class="font-mono">tun0 (VPN tunnel)</text>
+  <text x="470" y="298" fill="#94A3B8" font-size="12" class="font-mono">≠</text>
+  <text x="495" y="298" fill="#EF4444" font-size="12" font-weight="700" class="font-mono">eth0 (physical link - no route)</text>
+
+  <text x="115" y="316" fill="#94A3B8" font-size="12" class="font-mono">  └── ✗ Source IP Selected:</text>
+  <text x="320" y="316" fill="#CBD5E1" font-size="12" class="font-mono">10.8.0.14  ≠  192.168.1.84</text>
+
+  <!-- Flow Line 2 to 3 -->
+  <line x1="95" y1="332" x2="95" y2="348" stroke="#334155" stroke-width="2" stroke-dasharray="2 3" />
+
+  <!-- Node 3: Interface State -->
+  <circle cx="95" cy="358" r="5" fill="#10B981" />
+  <text x="115" y="362" fill="#10B981" font-size="13" font-weight="700" class="font-mono">[3] Interface Status</text>
+  <text x="320" y="362" fill="#64748B" font-size="13" class="font-mono">[MATCH]</text>
+  <text x="400" y="362" fill="#94A3B8" font-size="13" class="font-mono">tun0 is UP (MTU: 1420)  |  eth0 is UP (MTU: 1500)</text>
+
+  <!-- Flow Line 3 to 4 -->
+  <line x1="95" y1="368" x2="95" y2="384" stroke="#334155" stroke-width="2" stroke-dasharray="2 3" />
+
+  <!-- Node 4: Transport TCP Probe -->
+  <circle cx="95" cy="394" r="5" fill="#EF4444" />
+  <text x="115" y="398" fill="#EF4444" font-size="13" font-weight="700" class="font-mono">[4] TCP Connection</text>
+  <text x="320" y="398" fill="#EF4444" font-size="12" font-weight="700" class="font-mono">[DIVERGENT]</text>
+  <text x="430" y="398" fill="#10B981" font-size="13" font-weight="700" class="font-mono">connected (22ms)</text>
+  <text x="575" y="398" fill="#94A3B8" font-size="13" class="font-mono">≠</text>
+  <text x="600" y="398" fill="#EF4444" font-size="13" font-weight="700" class="font-mono">timeout (SYN_SENT dropped on physical eth0)</text>
+
+  <!-- Causal Diagnosis & Confidence Card -->
+  <rect x="75" y="424" width="1050" height="95" rx="8" fill="#0C1524" stroke="#00E5FF" stroke-width="1" />
+  <text x="95" y="450" fill="#00E5FF" font-size="13" font-weight="800" class="font-mono">CAUSAL ROOT CAUSE DIAGNOSIS</text>
+  <text x="365" y="450" fill="#94A3B8" font-size="12" class="font-mono">Confidence: <tspan fill="#10B981" font-weight="700">[████████░░] 85% STRONG</tspan></text>
+  <text x="95" y="474" fill="#F1F5F9" font-size="13" class="font-mono">Traffic to destination is not captured by policy routing rules on the failing host, dropping into</text>
+  <text x="95" y="494" fill="#F1F5F9" font-size="13" class="font-mono">the main route table and physical egress <tspan fill="#EF4444" font-weight="700">eth0</tspan> instead of VPN tunnel <tspan fill="#10B981" font-weight="700">tun0</tspan>.</text>
+
+  <!-- Actionable Remediation Playbook Card -->
+  <rect x="75" y="534" width="1050" height="236" rx="8" fill="#06121E" stroke="#10B981" stroke-width="1.5" />
+  
+  <rect x="75" y="534" width="1050" height="32" rx="8" fill="#064E3B" opacity="0.4" />
+  <text x="95" y="555" fill="#34D399" font-size="13" font-weight="800" class="font-mono">ACTIONABLE REMEDIATION PLAYBOOK &amp; GUARDED AUTO-FIX</text>
+
+  <!-- Immediate Bash Fix -->
+  <text x="95" y="590" fill="#94A3B8" font-size="12" font-weight="700" class="font-mono">Immediate Bash Fix:</text>
+  <rect x="95" y="598" width="1010" height="30" rx="4" fill="#0B1B2B" stroke="#1E3A5F" stroke-width="1" />
+  <text x="110" y="618" fill="#38BDF8" font-size="13" font-weight="700" class="font-mono">$ sudo ip rule add to 10.40.8.21/32 lookup 200</text>
+
+  <!-- Rollback Guard -->
+  <text x="95" y="648" fill="#94A3B8" font-size="12" font-weight="700" class="font-mono">Safety Rollback Guard (Automated on failure):</text>
+  <rect x="95" y="656" width="1010" height="30" rx="4" fill="#1C1427" stroke="#3B2050" stroke-width="1" />
+  <text x="110" y="676" fill="#FBBF24" font-size="13" font-weight="700" class="font-mono">$ sudo ip rule del to 10.40.8.21/32 lookup 200</text>
+
+  <!-- Guarded Auto-Remediation One-Liner -->
+  <text x="95" y="708" fill="#94A3B8" font-size="12" font-weight="700" class="font-mono">One-Click Guarded Execution (Apply + Canary Validation + Auto-Rollback):</text>
+  <rect x="95" y="716" width="1010" height="36" rx="6" fill="#064E3B" stroke="#059669" stroke-width="1" />
+  <text x="110" y="739" fill="#A7F3D0" font-size="14" font-weight="800" class="font-mono">$ netdiff fix api.internal.corp:443 --apply</text>
+  <rect x="960" y="722" width="130" height="24" rx="4" fill="#047857" />
+  <text x="1025" y="738" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="800" class="font-mono">SAFE AUTO-ROLLBACK</text>
+
+  <!-- Footer Info Line -->
+  <text x="75" y="805" fill="#64748B" font-size="12" class="font-mono">Diagnosed in 18ms via NetDiff Deterministic Causal Engine · 100% Offline · Zero Dependencies</text>
+  <text x="1125" y="805" text-anchor="end" fill="#00E5FF" font-size="12" font-weight="700" class="font-mono">https://github.com/Ackintya/netdiff</text>
+</svg>

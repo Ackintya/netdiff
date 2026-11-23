@@ -67,6 +67,10 @@ netdiff graph good.ndiff bad.ndiff
 
 ## Visual Terminal Previews
 
+<p align="center">
+  <img src="assets/causal_dag_terminal.svg" alt="NetDiff Terminal Causal DAG & Remediation" width="100%">
+</p>
+
 ### 1. Terminal Causal Dependency Graph (`netdiff graph`)
 Visualizes the physical and logical packet journey, pointing straight to the root cause:
 
@@ -174,9 +178,38 @@ Inspect socket internals that ping and traceroute miss:
 * Path MTU (`pmtu`) discovery
 * Lost and dropped packet counters
 
+### 🛡️ 5. Guarded Automated Remediation (`netdiff fix`)
+Safely apply verified remediation commands synthesized by the engine without risk:
+```bash
+# Preview what commands would run:
+netdiff fix good.ndiff bad.ndiff --dry-run
+
+# Execute with automated canary validation & rollback protection:
+netdiff fix good.ndiff bad.ndiff --apply -y
+```
+* **Canary Probe**: Immediately dials the target endpoint after applying the fix.
+* **Automatic Rollback**: If the canary probe does not recover connectivity, NetDiff **automatically executes the rollback command** and restores baseline state.
+
+### ⏱️ 6. Proactive Baseline Drift Monitor (`netdiff watch`)
+Continuously audit live target state against saved baseline snapshots before customer-facing outages occur:
+```bash
+# Audit target every 15 seconds:
+netdiff watch api.internal.corp:443 --interval 15s
+
+# Run single audit for CI/CD gates (exit code 0: healthy, 2: drift detected):
+netdiff watch api.internal.corp:443 --once
+
+# Stream line-delimited JSON (NDJSON) for SIEM / Datadog:
+netdiff watch api.internal.corp:443 --json
+```
+
 ---
 
-## How It Works: The 10-Layer Causal Model
+## How It Works: The 8-Layer Causal Model
+
+<p align="center">
+  <img src="assets/architecture_infographic.svg" alt="NetDiff Architecture Infographic" width="100%">
+</p>
 
 NetDiff captures state strictly bounded to the target host and port, then models packet flow through the kernel's decision pipeline:
 
@@ -247,6 +280,8 @@ NetDiff distinguishes between common real-world networking problems:
 | `netdiff graph <good> <bad> [--no-ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
 | `netdiff explain <good> <bad> [--no-ai]` | Synthesize diagnostic explanation and remediation playbook |
 | `netdiff ask <good> <bad> "<question>"` | Ask conversational debugging questions grounded in snapshot evidence |
+| `netdiff fix <good> <bad> [--apply]` | Guarded automated remediation with canary probe & rollback protection |
+| `netdiff watch <target> [--interval 30s]` | Proactive baseline drift monitor auditing network state continuously |
 | `netdiff report <good> <bad> [--html -o file]` | Generate Markdown or standalone interactive HTML incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff auth [key]` | Configure Gemini API key for AI reasoning and diagnosis |
@@ -288,6 +323,12 @@ go build -o netdiff ./cmd/netdiff
 # Run all unit tests:
 go test -v ./...
 ```
+
+---
+
+## Community & LinkedIn Launch
+
+Presenting or sharing NetDiff with your engineering team or network? Check out [`assets/LINKEDIN_LAUNCH.md`](assets/LINKEDIN_LAUNCH.md) for viral post templates, a 7-slide carousel deck, and high-resolution architecture graphics.
 
 ---
 

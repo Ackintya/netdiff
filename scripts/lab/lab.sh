@@ -241,9 +241,27 @@ lab_verify() {
 
   echo ""
   echo "=========================================================="
+  echo " NetDiff Terminal Causal Dependency Graph"
+  echo "=========================================================="
+  "$NETDIFF_BIN" graph "$good_file" "$bad_file"
+
+  echo ""
+  echo "=========================================================="
   echo " NetDiff Diagnostic Explanation & Probe Recommendation"
   echo "=========================================================="
   "$NETDIFF_BIN" explain "$good_file" "$bad_file"
+
+  echo ""
+  echo "=========================================================="
+  echo " NetDiff Grounded Q&A (netdiff ask)"
+  echo "=========================================================="
+  "$NETDIFF_BIN" ask "$good_file" "$bad_file" "What is the primary root cause divergence?"
+
+  echo ""
+  echo "=========================================================="
+  echo " NetDiff Guarded Automated Remediation Plan (netdiff fix)"
+  echo "=========================================================="
+  "$NETDIFF_BIN" fix "$good_file" "$bad_file" --dry-run
 
   echo ""
   echo "=========================================================="
@@ -335,10 +353,48 @@ lab_run_all() {
 
   echo ""
   echo "=========================================================="
+  echo " Testing Proactive Baseline Drift Monitor (netdiff watch)"
+  echo "=========================================================="
+  lab_watch "$OUTPUT_DIR/good.ndiff"
+
+  echo ""
+  echo "=========================================================="
   echo " NetDiff v0.4 Laboratory Results: $passed Passed, $failed Failed"
   echo "=========================================================="
 
   lab_cleanup
+}
+
+# 9. Apply guarded remediation inside client namespace
+lab_fix() {
+  check_prereqs
+  local scenario="${1:-}"
+  local good_file="${2:-$OUTPUT_DIR/good.ndiff}"
+  local bad_file="$OUTPUT_DIR/${scenario}.ndiff"
+
+  if [ ! -f "$good_file" ] || [ ! -f "$bad_file" ]; then
+    echo "Error: Missing snapshot files for fix ($good_file, $bad_file)" >&2
+    exit 1
+  fi
+
+  echo "=========================================================="
+  echo " NetDiff Guarded Fix: $scenario"
+  echo "=========================================================="
+  ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" fix "$good_file" "$bad_file" --apply -y
+}
+
+# 10. Proactive baseline drift audit inside client namespace
+lab_watch() {
+  check_prereqs
+  local good_file="${1:-$OUTPUT_DIR/good.ndiff}"
+  if [ ! -f "$good_file" ]; then
+    echo "Error: Missing baseline snapshot: $good_file" >&2
+    exit 1
+  fi
+  echo "=========================================================="
+  echo " NetDiff Proactive Drift Audit"
+  echo "=========================================================="
+  ip netns exec "$CLIENT_NS" "$NETDIFF_BIN" watch "$TARGET_HOST" --baseline "$good_file" --count 2 --interval 2s
 }
 
 usage() {
@@ -351,6 +407,8 @@ usage() {
   echo "  inject <scenario>      Inject a fault (iface-down, route-missing, firewall-drop, dns-failure, port-closed, arp-failure)"
   echo "  capture <name> [tgt]   Capture network state to <name>.ndiff"
   echo "  verify <scenario>      Compare baseline to scenario snapshot and run validation probe"
+  echo "  fix <scenario>         Execute guarded automated remediation inside client namespace"
+  echo "  watch                  Execute proactive baseline drift audit"
   echo "  restore                Restore environment to clean working baseline"
   echo "  cleanup                Tear down namespaces, kill servers, and clean temporary files"
   echo "  run-all                Execute full automated test suite for all 6 scenarios"
@@ -362,6 +420,8 @@ case "${1:-}" in
   inject)   lab_inject "${2:-}" ;;
   capture)  lab_capture "${2:-bad}" "${3:-$TARGET_HOST}" ;;
   verify)   lab_verify "${2:-}" ;;
+  fix)      lab_fix "${2:-}" ;;
+  watch)    lab_watch "${2:-}" ;;
   restore)  lab_restore ;;
   cleanup)  lab_cleanup ;;
   run-all)  lab_run_all ;;

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"netdiff/internal/ai"
+	"netdiff/internal/remediation"
 	"netdiff/pkg/model"
 )
 
@@ -459,6 +460,10 @@ func (p *Printer) PrintDiagnosis(comp *model.ComparisonReport, exp *ai.Explanati
 			fmt.Fprintf(p.Out, "  %sImmediate Fix (copy-pasteable):%s\n", ColorBold, ColorReset)
 			fmt.Fprintf(p.Out, "  %s$ %s%s\n\n", ColorBold+ColorCyan, exp.Remediation.ImmediateBash, ColorReset)
 		}
+		if exp.Remediation.RollbackBash != "" && !strings.HasPrefix(exp.Remediation.RollbackBash, "#") {
+			fmt.Fprintf(p.Out, "  %sRollback Guard:%s\n", ColorBold, ColorReset)
+			fmt.Fprintf(p.Out, "  %s$ %s%s\n\n", ColorYellow, exp.Remediation.RollbackBash, ColorReset)
+		}
 		if exp.Remediation.PermanentConfig != "" {
 			fmt.Fprintf(p.Out, "  %sPermanent Configuration:%s\n", ColorBold, ColorReset)
 			cfgLines := strings.Split(exp.Remediation.PermanentConfig, "\n")
@@ -475,6 +480,8 @@ func (p *Printer) PrintDiagnosis(comp *model.ComparisonReport, exp *ai.Explanati
 			wrapped := wrapText(exp.Remediation.Explanation, 68, "  ")
 			fmt.Fprintf(p.Out, "  %sWhy: %s%s\n\n", ColorBold, ColorReset, wrapped)
 		}
+		fmt.Fprintf(p.Out, "  %sGuarded Auto-Fix:%s\n", ColorBold, ColorReset)
+		fmt.Fprintf(p.Out, "  %s$ netdiff fix <good> <bad> --apply%s\n\n", ColorBold+ColorGreen, ColorReset)
 	}
 
 	fmt.Fprintf(p.Out, "  %sDiagnosis provided by: %s%s\n\n", ColorMuted, exp.Provider, ColorReset)
@@ -760,4 +767,90 @@ func formatRule(r *model.RouteReport) string {
 		return "main"
 	}
 	return r.PolicyRule
+}
+
+// PrintFixResult renders the structured report of a netdiff fix execution.
+func (p *Printer) PrintFixResult(res *remediation.FixResult) {
+	fmt.Fprintf(p.Out, "\n  %s╔══════════════════════════════════════════════════════════════════════╗%s\n", ColorCyan, ColorReset)
+	titleText := fmt.Sprintf("NETDIFF GUARDED REMEDIATION  ·  %s", res.Target.Raw)
+	fmt.Fprintf(p.Out, "  %s║%s  %-68s%s║%s\n", ColorCyan, ColorBold, titleText, ColorCyan, ColorReset)
+	fmt.Fprintf(p.Out, "  %s╚══════════════════════════════════════════════════════════════════════╝%s\n\n", ColorCyan, ColorReset)
+
+	switch res.Status {
+	case remediation.FixStatusDryRun:
+		fmt.Fprintf(p.Out, "  %sMODE: DRY RUN (No system changes applied)%s\n\n", ColorBold+ColorYellow, ColorReset)
+		if res.Plan != nil {
+			if res.Plan.ImmediateBash != "" {
+				fmt.Fprintf(p.Out, "  %sRemediation Command:%s\n", ColorBold, ColorReset)
+				fmt.Fprintf(p.Out, "    $ %s%s%s\n\n", ColorBold+ColorCyan, res.Plan.ImmediateBash, ColorReset)
+			}
+			if res.Plan.RollbackBash != "" && !strings.HasPrefix(res.Plan.RollbackBash, "#") {
+				fmt.Fprintf(p.Out, "  %sSafety Rollback Guard:%s\n", ColorBold, ColorReset)
+				fmt.Fprintf(p.Out, "    $ %s%s%s\n\n", ColorYellow, res.Plan.RollbackBash, ColorReset)
+			}
+			if res.Plan.VerificationCmd != "" {
+				fmt.Fprintf(p.Out, "  %sCanary Verification Probe:%s\n", ColorBold, ColorReset)
+				fmt.Fprintf(p.Out, "    $ %s%s%s\n\n", ColorGreen, res.Plan.VerificationCmd, ColorReset)
+			}
+			if res.Plan.Explanation != "" {
+				fmt.Fprintf(p.Out, "  %sRationale:%s %s\n\n", ColorBold, ColorReset, res.Plan.Explanation)
+			}
+		}
+		fmt.Fprintf(p.Out, "  %sTo apply this verified fix with automated rollback protection, run:%s\n", ColorBold, ColorReset)
+		if res.Target.Raw != "" && !strings.Contains(res.Target.Raw, ".ndiff") {
+			fmt.Fprintf(p.Out, "    %snetdiff fix %s --apply%s\n\n", ColorBold+ColorGreen, res.Target.Raw, ColorReset)
+		} else {
+			fmt.Fprintf(p.Out, "    %snetdiff fix <good> <bad> --apply%s\n\n", ColorBold+ColorGreen, ColorReset)
+		}
+
+	case remediation.FixStatusAppliedVerified:
+		fmt.Fprintf(p.Out, "  %s✓ REMEDIATION APPLIED & VERIFIED SUCCESSFULLY%s\n\n", ColorBold+ColorGreen, ColorReset)
+		if res.Plan != nil && res.Plan.ImmediateBash != "" {
+			fmt.Fprintf(p.Out, "  %sApplied Fix:%s\n    $ %s%s%s\n\n", ColorBold, ColorReset, ColorCyan, res.Plan.ImmediateBash, ColorReset)
+		}
+		if res.CanaryOutput != "" {
+			fmt.Fprintf(p.Out, "  %sCanary Probe:%s\n    %s\n\n", ColorBold, ColorReset, res.CanaryOutput)
+		}
+		if res.Plan != nil && res.Plan.PermanentConfig != "" {
+			fmt.Fprintf(p.Out, "  %sPermanent Configuration (to persist across reboots):%s\n", ColorBold, ColorReset)
+			for _, line := range strings.Split(res.Plan.PermanentConfig, "\n") {
+				fmt.Fprintf(p.Out, "    %s%s%s\n", ColorMuted, line, ColorReset)
+			}
+			fmt.Fprintln(p.Out)
+		}
+
+	case remediation.FixStatusCanaryFailedRolledBack:
+		fmt.Fprintf(p.Out, "  %s⚠ CANARY FAILED - AUTOMATIC ROLLBACK TRIGGERED%s\n\n", ColorBold+ColorRed, ColorReset)
+		if res.Plan != nil {
+			fmt.Fprintf(p.Out, "  %sAttempted Fix:%s\n    $ %s%s%s\n", ColorBold, ColorReset, ColorMuted, res.Plan.ImmediateBash, ColorReset)
+			if res.CanaryError != nil {
+				fmt.Fprintf(p.Out, "  %sCanary Check:%s   %s✗ %v%s\n", ColorBold, ColorReset, ColorRed, res.CanaryError, ColorReset)
+			}
+			fmt.Fprintf(p.Out, "  %sExecuted Rollback:%s\n    $ %s%s%s\n\n", ColorBold, ColorReset, ColorYellow, res.Plan.RollbackBash, ColorReset)
+		}
+		fmt.Fprintf(p.Out, "  %sSystem state safely restored to pre-fix baseline.%s\n\n", ColorGreen, ColorReset)
+
+	case remediation.FixStatusApplyFailed:
+		fmt.Fprintf(p.Out, "  %s✗ REMEDIATION COMMAND FAILED%s\n\n", ColorBold+ColorRed, ColorReset)
+		if res.ImmediateError != nil {
+			fmt.Fprintf(p.Out, "  %sError:%s  %v\n", ColorBold, ColorReset, res.ImmediateError)
+		}
+		if res.ImmediateOutput != "" {
+			fmt.Fprintf(p.Out, "  %sOutput:%s %s\n", ColorBold, ColorReset, res.ImmediateOutput)
+		}
+		fmt.Fprintln(p.Out)
+
+	case remediation.FixStatusRollbackFailed:
+		fmt.Fprintf(p.Out, "  %sCRITICAL: ROLLBACK COMMAND FAILED%s\n\n", ColorBold+ColorRed, ColorReset)
+		if res.RollbackError != nil {
+			fmt.Fprintf(p.Out, "  %sRollback Error:%s  %v\n", ColorBold, ColorReset, res.RollbackError)
+		}
+		fmt.Fprintln(p.Out)
+
+	default:
+		for _, s := range res.Steps {
+			fmt.Fprintf(p.Out, "  %s\n", s)
+		}
+		fmt.Fprintln(p.Out)
+	}
 }

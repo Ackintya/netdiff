@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"netdiff/internal/ai"
+	"netdiff/internal/remediation"
 	"netdiff/pkg/model"
 )
 
@@ -205,5 +206,54 @@ func TestPrintCheck(t *testing.T) {
 	p.PrintCheck(snapTLSBad)
 	if !strings.Contains(buf.String(), "tls_failed") {
 		t.Errorf("expected tls_failed, got %s", buf.String())
+	}
+}
+
+func TestPrintFixResult(t *testing.T) {
+	var buf bytes.Buffer
+	p := &Printer{Out: &buf}
+
+	plan := &ai.RemediationPlan{
+		ImmediateBash:   "ip rule add to 10.40.8.21/32 lookup 200",
+		RollbackBash:    "ip rule del to 10.40.8.21/32 lookup 200",
+		PermanentConfig: "table 200",
+		VerificationCmd: "ip rule show",
+		Explanation:     "Adds routing policy rule",
+	}
+	tgt := model.Target{Raw: "10.40.8.21:8080"}
+
+	// 1. Dry run
+	buf.Reset()
+	p.PrintFixResult(&remediation.FixResult{
+		Status: remediation.FixStatusDryRun,
+		Plan:   plan,
+		Target: tgt,
+	})
+	if !strings.Contains(buf.String(), "DRY RUN") || !strings.Contains(buf.String(), "ip rule add") {
+		t.Errorf("expected dry run output with command, got: %s", buf.String())
+	}
+
+	// 2. Applied & Verified
+	buf.Reset()
+	p.PrintFixResult(&remediation.FixResult{
+		Status:       remediation.FixStatusAppliedVerified,
+		Plan:         plan,
+		Target:       tgt,
+		CanaryOutput: "TCP connection established",
+	})
+	if !strings.Contains(buf.String(), "VERIFIED SUCCESSFULLY") {
+		t.Errorf("expected verified output, got: %s", buf.String())
+	}
+
+	// 3. Canary failed + Rolled back
+	buf.Reset()
+	p.PrintFixResult(&remediation.FixResult{
+		Status:     remediation.FixStatusCanaryFailedRolledBack,
+		Plan:       plan,
+		Target:     tgt,
+		RolledBack: true,
+	})
+	if !strings.Contains(buf.String(), "AUTOMATIC ROLLBACK TRIGGERED") {
+		t.Errorf("expected rollback output, got: %s", buf.String())
 	}
 }

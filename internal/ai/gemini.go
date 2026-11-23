@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -46,6 +47,7 @@ type DiagnosticProbeChoice struct {
 // RemediationPlan provides copy-pasteable resolution actions for the failing environment.
 type RemediationPlan struct {
 	ImmediateBash   string `json:"immediate_bash"`
+	RollbackBash    string `json:"rollback_bash,omitempty"`
 	PermanentConfig string `json:"permanent_config,omitempty"`
 	VerificationCmd string `json:"verification_cmd,omitempty"`
 	Explanation     string `json:"explanation,omitempty"`
@@ -122,6 +124,36 @@ func (r *Reasoner) Explain(ctx context.Context, report *model.ComparisonReport, 
 	return r.explainDeterministic(report)
 }
 
+// resolveTargetCIDR determines the most specific IP/CIDR prefix for routing/policy remediation.
+// If the target is an IP, it appends /32 (IPv4) or /128 (IPv6). If the target is a hostname,
+// it extracts the resolved destination IP from the route, DNS, or TCP evidence bundles.
+func resolveTargetCIDR(report *model.ComparisonReport) string {
+	ipStr := report.Target.Host
+	if !report.Target.IsIP {
+		if report.WorkingSnapshot != nil && report.WorkingSnapshot.Route != nil && report.WorkingSnapshot.Route.DestinationIP != "" {
+			ipStr = report.WorkingSnapshot.Route.DestinationIP
+		} else if report.WorkingSnapshot != nil && report.WorkingSnapshot.DNS != nil && len(report.WorkingSnapshot.DNS.ARecords) > 0 {
+			ipStr = report.WorkingSnapshot.DNS.ARecords[0]
+		} else if report.WorkingSnapshot != nil && report.WorkingSnapshot.TCP != nil && report.WorkingSnapshot.TCP.RemoteIP != "" {
+			ipStr = report.WorkingSnapshot.TCP.RemoteIP
+		} else if report.FailingSnapshot != nil && report.FailingSnapshot.Route != nil && report.FailingSnapshot.Route.DestinationIP != "" {
+			ipStr = report.FailingSnapshot.Route.DestinationIP
+		} else if report.FailingSnapshot != nil && report.FailingSnapshot.DNS != nil && len(report.FailingSnapshot.DNS.ARecords) > 0 {
+			ipStr = report.FailingSnapshot.DNS.ARecords[0]
+		}
+	}
+
+	parsed := net.ParseIP(ipStr)
+	if parsed != nil {
+		if parsed.To4() != nil {
+			return ipStr + "/32"
+		}
+		return ipStr + "/128"
+	}
+	// Fallback to raw string if unable to resolve
+	return ipStr
+}
+
 // explainDeterministic produces structured diagnosis using the causal DAG and relevance rankings.
 func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*ExplanationReport, error) {
 	result := &ExplanationReport{
@@ -161,6 +193,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("sudo systemctl status $(ss -tlpn 'sport = :%d' | awk 'NR==2 {print $NF}') || sudo netstat -tlpn | grep %d", report.Target.Port, report.Target.Port),
+				RollbackBash:    "# Read-only diagnostic query; no rollback needed",
 				PermanentConfig: fmt.Sprintf("Ensure service listening on port %d is enabled and started: sudo systemctl enable --now <service>", report.Target.Port),
 				VerificationCmd: fmt.Sprintf("nc -zv %s %d", report.Target.Host, report.Target.Port),
 				Explanation:     fmt.Sprintf("TCP RST indicates network reachability is intact but no daemon is accepting connections on port %d.", report.Target.Port),
@@ -176,6 +209,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		result.Summary = fmt.Sprintf("Both environments share identical network paths to %s. Observed outcomes (working: %s, failing: %s) suggest an intermittent endpoint failure or application-level drop.", report.Target.Raw, wTCP, fTCP)
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   fmt.Sprintf("ip route get %s && ping -c 3 %s", report.Target.Host, report.Target.Host),
+			RollbackBash:    "# Read-only connectivity check; no rollback needed",
 			PermanentConfig: "Verify application service health and check /var/log/syslog on destination host.",
 			VerificationCmd: fmt.Sprintf("netdiff check %s", report.Target.Raw),
 			Explanation:     fmt.Sprintf("Validate direct path reachability and application daemon responsiveness for %s.", report.Target.Raw),
@@ -230,11 +264,13 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			},
 		}
 
+		targetCIDR := resolveTargetCIDR(report)
 		result.Remediation = &RemediationPlan{
-			ImmediateBash:   fmt.Sprintf("sudo ip route add %s/32 dev %s", report.Target.Host, workingRoute.EgressInterface),
+			ImmediateBash:   fmt.Sprintf("sudo ip route add %s dev %s", targetCIDR, workingRoute.EgressInterface),
+			RollbackBash:    fmt.Sprintf("sudo ip route del %s dev %s", targetCIDR, workingRoute.EgressInterface),
 			PermanentConfig: fmt.Sprintf("Ensure interface %s is UP and routing daemon or VPN client is running.", workingRoute.EgressInterface),
 			VerificationCmd: fmt.Sprintf("ip route get %s", report.Target.Host),
-			Explanation:     fmt.Sprintf("Restores route towards %s via interface %s after route lookup failure on the failing host.", report.Target.Host, workingRoute.EgressInterface),
+			Explanation:     fmt.Sprintf("Restores route towards %s via interface %s after route lookup failure on the failing host.", targetCIDR, workingRoute.EgressInterface),
 		}
 
 		result.NextBestProbe = &DiagnosticProbeChoice{
@@ -268,12 +304,13 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		if report.WorkingSnapshot.Route != nil && report.WorkingSnapshot.Route.Table != 0 {
 			workingTable = report.WorkingSnapshot.Route.Table
 		}
-		targetHost := report.Target.Host
+		targetCIDR := resolveTargetCIDR(report)
 		result.Remediation = &RemediationPlan{
-			ImmediateBash:   fmt.Sprintf("sudo ip rule add to %s/32 lookup %d", targetHost, workingTable),
-			PermanentConfig: fmt.Sprintf("# /etc/netplan/99-netdiff-policy.yaml\nnetwork:\n  version: 2\n  ethernets:\n    %s:\n      routing-policy:\n        - to: %s/32\n          table: %d", workingIface, targetHost, workingTable),
+			ImmediateBash:   fmt.Sprintf("sudo ip rule add to %s lookup %d", targetCIDR, workingTable),
+			RollbackBash:    fmt.Sprintf("sudo ip rule del to %s lookup %d", targetCIDR, workingTable),
+			PermanentConfig: fmt.Sprintf("# /etc/netplan/99-netdiff-policy.yaml\nnetwork:\n  version: 2\n  ethernets:\n    %s:\n      routing-policy:\n        - to: %s\n          table: %d", workingIface, targetCIDR, workingTable),
 			VerificationCmd: fmt.Sprintf("ip rule show | grep %d", workingTable),
-			Explanation:     fmt.Sprintf("Adds a policy routing rule directing traffic for %s to table %d, routing via %s instead of fallback default %s.", targetHost, workingTable, workingIface, failingIface),
+			Explanation:     fmt.Sprintf("Adds a policy routing rule directing traffic for %s to table %d, routing via %s instead of fallback default %s.", targetCIDR, workingTable, workingIface, failingIface),
 		}
 
 		result.NextBestProbe = &DiagnosticProbeChoice{
@@ -306,6 +343,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   fmt.Sprintf("sudo ip link set dev %s up", probeParam),
+			RollbackBash:    fmt.Sprintf("sudo ip link set dev %s down", probeParam),
 			PermanentConfig: "sudo systemctl restart systemd-networkd # or: sudo netplan apply",
 			VerificationCmd: fmt.Sprintf("ip link show dev %s", probeParam),
 			Explanation:     fmt.Sprintf("Brings interface %s administratively UP so network traffic can egress.", probeParam),
@@ -343,16 +381,17 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		if report.WorkingSnapshot.Route != nil && report.WorkingSnapshot.Route.Gateway != "" {
 			gw = fmt.Sprintf(" via %s", report.WorkingSnapshot.Route.Gateway)
 		}
-		targetHost := report.Target.Host
+		targetCIDR := resolveTargetCIDR(report)
 		permGw := ""
 		if gw != "" {
 			permGw = fmt.Sprintf("\n          via: %s", strings.TrimPrefix(gw, " via "))
 		}
 		result.Remediation = &RemediationPlan{
-			ImmediateBash:   fmt.Sprintf("sudo ip route add %s/32%s dev %s", targetHost, gw, workingIface),
-			PermanentConfig: fmt.Sprintf("# /etc/netplan/99-netdiff-routes.yaml\nnetwork:\n  version: 2\n  ethernets:\n    %s:\n      routes:\n        - to: %s/32%s", workingIface, targetHost, permGw),
-			VerificationCmd: fmt.Sprintf("ip route get %s", targetHost),
-			Explanation:     fmt.Sprintf("Installs missing routing table entry for destination %s directing out interface %s.", targetHost, workingIface),
+			ImmediateBash:   fmt.Sprintf("sudo ip route add %s%s dev %s", targetCIDR, gw, workingIface),
+			RollbackBash:    fmt.Sprintf("sudo ip route del %s dev %s", targetCIDR, workingIface),
+			PermanentConfig: fmt.Sprintf("# /etc/netplan/99-netdiff-routes.yaml\nnetwork:\n  version: 2\n  ethernets:\n    %s:\n      routes:\n        - to: %s%s", workingIface, targetCIDR, permGw),
+			VerificationCmd: fmt.Sprintf("ip route get %s", report.Target.Host),
+			Explanation:     fmt.Sprintf("Installs missing routing table entry for destination %s directing out interface %s.", targetCIDR, workingIface),
 		}
 
 		result.NextBestProbe = &DiagnosticProbeChoice{
@@ -380,6 +419,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   fmt.Sprintf("sudo resolvectl dns $(ip route show default | awk '{print $5}') %s", nameservers),
+			RollbackBash:    "sudo resolvectl revert $(ip route show default | awk '{print $5}')",
 			PermanentConfig: fmt.Sprintf("# /etc/systemd/resolved.conf\n[Resolve]\nDNS=%s", nameservers),
 			VerificationCmd: fmt.Sprintf("resolvectl query %s", report.Target.Host),
 			Explanation:     fmt.Sprintf("Configures the working DNS resolver (%s) so %s resolves correctly.", nameservers, report.Target.Host),
@@ -405,6 +445,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY",
+			RollbackBash:    "# No state rollback required for unset environment variables",
 			PermanentConfig: "# Remove proxy exports from /etc/environment or ~/.bashrc",
 			VerificationCmd: "env | grep -i proxy || echo 'Proxy cleared'",
 			Explanation:     "Removes proxy environment variables that intercept and drop outbound socket connections.",
@@ -435,6 +476,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		port := report.Target.Port
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   fmt.Sprintf("sudo iptables -D OUTPUT -p tcp --dport %d -j DROP", port),
+			RollbackBash:    fmt.Sprintf("sudo iptables -A OUTPUT -p tcp --dport %d -j DROP", port),
 			PermanentConfig: "# Save rules after deletion\nsudo iptables-save > /etc/iptables/rules.v4",
 			VerificationCmd: fmt.Sprintf("sudo iptables -L OUTPUT -n -v | grep %d || echo 'No blocking rule'", port),
 			Explanation:     fmt.Sprintf("Removes the iptables DROP rule blocking outbound TCP traffic to port %d.", port),
@@ -477,6 +519,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		if workingMAC != "" {
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("sudo ip neigh replace %s lladdr %s dev %s nud reachable", neighIP, workingMAC, workingIface),
+				RollbackBash:    fmt.Sprintf("sudo ip neigh del %s dev %s", neighIP, workingIface),
 				PermanentConfig: fmt.Sprintf("Verify Layer 2 switch port VLAN tag and physical connectivity for %s.", workingIface),
 				VerificationCmd: fmt.Sprintf("ip neigh show %s", neighIP),
 				Explanation:     fmt.Sprintf("Installs the working MAC address (%s) for next-hop %s into the kernel ARP table.", workingMAC, neighIP),
@@ -484,6 +527,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 		} else {
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("sudo ip neigh flush to %s dev %s && arping -c 3 -I %s %s", neighIP, failingIface, failingIface, neighIP),
+				RollbackBash:    "# No state rollback required after ARP flush and arp probe",
 				PermanentConfig: fmt.Sprintf("Verify switch port isolation, security ACLs, or VLAN tags for next-hop %s.", neighIP),
 				VerificationCmd: fmt.Sprintf("ip neigh show %s", neighIP),
 				Explanation:     fmt.Sprintf("Flushes stale ARP entry and broadcasts ARP requests to re-learn next hop %s MAC address.", neighIP),
@@ -522,6 +566,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   "sudo cp <ca-cert.crt> /usr/local/share/ca-certificates/ && sudo update-ca-certificates",
+				RollbackBash:    "sudo rm -f /usr/local/share/ca-certificates/<ca-cert.crt> && sudo update-ca-certificates",
 				PermanentConfig: "Include ca-certificates and private corporate CA bundle in base container/VM image build.",
 				VerificationCmd: fmt.Sprintf("openssl s_client -connect %s:%d -servername %s < /dev/null", report.Target.Host, report.Target.Port, report.Target.Host),
 				Explanation:     fmt.Sprintf("Installs missing Certificate Authority root certificate into the system trust store on %s.", report.FailingHost),
@@ -537,6 +582,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("# Renew or replace expired TLS certificate on endpoint %s", report.Target.Host),
+				RollbackBash:    "# No client-side rollback needed for server certificate renewal",
 				PermanentConfig: "Configure cert-manager or automated ACME cert renewal.",
 				VerificationCmd: fmt.Sprintf("openssl s_client -connect %s:%d -servername %s 2>/dev/null | openssl x509 -noout -dates", report.Target.Host, report.Target.Port, report.Target.Host),
 				Explanation:     fmt.Sprintf("The TLS certificate served by %s has expired and must be renewed on the server endpoint.", report.Target.Host),
@@ -552,6 +598,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("openssl s_client -connect %s:%d -servername %s", report.Target.Host, report.Target.Port, report.Target.Host),
+				RollbackBash:    "# Diagnostic command only; no rollback needed",
 				PermanentConfig: "Re-issue certificate with Subject Alternative Name (SAN) including " + report.Target.Host,
 				VerificationCmd: fmt.Sprintf("openssl s_client -connect %s:%d -servername %s < /dev/null", report.Target.Host, report.Target.Port, report.Target.Host),
 				Explanation:     "Update server certificate SAN to match the connecting domain name.",
@@ -567,6 +614,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("openssl s_client -connect %s:%d -servername %s -tls1_3", report.Target.Host, report.Target.Port, report.Target.Host),
+				RollbackBash:    "# Diagnostic command only; no rollback needed",
 				PermanentConfig: "Ensure TLS 1.2 and TLS 1.3 ciphers are enabled in the client application configuration.",
 				VerificationCmd: fmt.Sprintf("openssl s_client -connect %s:%d -servername %s < /dev/null", report.Target.Host, report.Target.Port, report.Target.Host),
 				Explanation:     "Check TLS handshake parameters and cipher suite compatibility between client and server.",
@@ -596,6 +644,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("sudo ethtool -S %s | grep -E 'drop|error|miss|discard'", failingIface),
+				RollbackBash:    "# Diagnostic query; no rollback needed",
 				PermanentConfig: "Check intermediate switch interfaces for CRC errors or path MTU blackholes.",
 				VerificationCmd: fmt.Sprintf("ss -ti dst %s", report.Target.Host),
 				Explanation:     fmt.Sprintf("Monitors interface driver drop counters to isolate physical or buffer overruns on %s.", failingIface),
@@ -616,6 +665,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 			}
 			result.Remediation = &RemediationPlan{
 				ImmediateBash:   fmt.Sprintf("nc -zv %s %d", report.Target.Host, report.Target.Port),
+				RollbackBash:    "# Diagnostic test only; no rollback needed",
 				PermanentConfig: fmt.Sprintf("Check remote firewall security groups allowing inbound traffic on port %d.", report.Target.Port),
 				VerificationCmd: fmt.Sprintf("netdiff check %s", report.Target.Raw),
 				Explanation:     fmt.Sprintf("Test TCP transport reachability directly to destination %s.", report.Target.Raw),
@@ -641,6 +691,7 @@ func (r *Reasoner) explainDeterministic(report *model.ComparisonReport) (*Explan
 
 		result.Remediation = &RemediationPlan{
 			ImmediateBash:   fmt.Sprintf("ip route get %s && ping -c 2 %s", report.Target.Host, report.Target.Host),
+			RollbackBash:    "# Diagnostic test only; no rollback needed",
 			PermanentConfig: "Align network configuration with working baseline host.",
 			VerificationCmd: fmt.Sprintf("netdiff check %s", report.Target.Raw),
 			Explanation:     fmt.Sprintf("Validate basic reachability and route path towards %s.", report.Target.Raw),
@@ -716,6 +767,9 @@ func (r *Reasoner) callGemini(ctx context.Context, report *model.ComparisonRepor
 						"type": "OBJECT",
 						"properties": map[string]interface{}{
 							"immediate_bash": map[string]interface{}{
+								"type": "STRING",
+							},
+							"rollback_bash": map[string]interface{}{
 								"type": "STRING",
 							},
 							"permanent_config": map[string]interface{}{

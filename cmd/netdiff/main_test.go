@@ -64,6 +64,19 @@ func TestReorderArgs(t *testing.T) {
 	if askReordered[0] != "--json" {
 		t.Errorf("expected --json first, got: %v", askReordered)
 	}
+
+	// Test fix and watch flag reordering
+	fixArgs := []string{"host-a.ndiff", "host-b.ndiff", "--apply", "--timeout", "15s", "-y"}
+	fixReordered := reorderArgs(fixArgs)
+	if fixReordered[0] != "--apply" {
+		t.Errorf("expected --apply first in fix reorder, got: %v", fixReordered)
+	}
+
+	watchArgs := []string{"api.corp:443", "--interval", "10s", "--count", "5", "--json"}
+	watchReordered := reorderArgs(watchArgs)
+	if watchReordered[0] != "--interval" || watchReordered[1] != "10s" {
+		t.Errorf("expected --interval 10s first in watch reorder, got: %v", watchReordered)
+	}
 }
 
 func TestShouldEnableAI(t *testing.T) {
