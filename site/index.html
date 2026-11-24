@@ -1,0 +1,1523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetDiff — Live Web Playground & Causal Network Diagnostics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090d16;
+      --bg-panel: rgba(18, 25, 41, 0.75);
+      --bg-card: rgba(24, 34, 56, 0.85);
+      --border: rgba(56, 75, 112, 0.4);
+      --border-glow: rgba(0, 229, 255, 0.35);
+      --text-main: #f0f4fc;
+      --text-muted: #8899b8;
+      --accent-cyan: #00e5ff;
+      --accent-cyan-glow: rgba(0, 229, 255, 0.25);
+      --accent-purple: #7c4dff;
+      --status-green: #00e676;
+      --status-green-glow: rgba(0, 230, 118, 0.2);
+      --status-amber: #ffd600;
+      --status-amber-glow: rgba(255, 214, 0, 0.25);
+      --status-red: #ff1744;
+      --status-red-glow: rgba(255, 23, 68, 0.25);
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(0, 229, 255, 0.06) 0%, transparent 40%),
+        radial-gradient(circle at 85% 85%, rgba(124, 77, 255, 0.06) 0%, transparent 40%),
+        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+    }
+
+    /* Header */
+    header {
+      background: rgba(12, 17, 29, 0.85);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      color: #000;
+      font-size: 10px;
+      font-weight: 800;
+      padding: 3px 8px;
+      border-radius: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    .target-pill {
+      background: rgba(0, 229, 255, 0.1);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Scenario Selector */
+    .scenario-selector-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(24, 34, 56, 0.7);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 8px;
+    }
+
+    .selector-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--accent-cyan);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .scenario-dropdown {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+      padding-right: 8px;
+    }
+
+    .scenario-dropdown option {
+      background: #0d1424;
+      color: #fff;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+    }
+
+    .btn:hover {
+      background: rgba(0, 229, 255, 0.15);
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 14px var(--accent-cyan-glow);
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(124, 77, 255, 0.2));
+      border: 1px solid rgba(0, 229, 255, 0.5);
+      color: #fff;
+    }
+
+    /* Container */
+    .app-container {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Hero Subtitle */
+    .hero-banner {
+      background: rgba(18, 25, 41, 0.6);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .hero-text {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .hero-text strong {
+      color: var(--accent-cyan);
+    }
+
+    /* Alert Banner */
+    .root-cause-banner {
+      background: linear-gradient(90deg, rgba(255, 214, 0, 0.12), rgba(255, 23, 68, 0.08));
+      border: 1px solid rgba(255, 214, 0, 0.4);
+      border-radius: 12px;
+      padding: 16px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+      animation: pulseGlow 3s infinite alternate;
+    }
+
+    @keyframes pulseGlow {
+      0% { border-color: rgba(255, 214, 0, 0.3); }
+      100% { border-color: rgba(255, 214, 0, 0.65); box-shadow: 0 0 20px rgba(255, 214, 0, 0.15); }
+    }
+
+    .rc-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .rc-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(255, 214, 0, 0.2);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--status-amber);
+    }
+
+    .rc-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--status-amber);
+      font-weight: 700;
+    }
+
+    .rc-message {
+      font-size: 15px;
+      font-weight: 600;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    .status-badge {
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .status-badge.success {
+      background: rgba(0, 230, 118, 0.15);
+      border: 1px solid var(--status-green);
+      color: var(--status-green);
+    }
+
+    .status-badge.failure {
+      background: rgba(255, 23, 68, 0.15);
+      border: 1px solid var(--status-red);
+      color: var(--status-red);
+    }
+
+    /* Environment Overview Cards */
+    .environments-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .env-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      backdrop-filter: blur(12px);
+      transition: all 0.2s ease;
+    }
+
+    .env-card.working {
+      border-left: 4px solid var(--status-green);
+    }
+
+    .env-card.failing {
+      border-left: 4px solid var(--status-red);
+    }
+
+    .env-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+
+    .env-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .env-hostname {
+      font-size: 17px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      margin-top: 2px;
+      color: #fff;
+    }
+
+    .env-specs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.25);
+      border-radius: 8px;
+      padding: 10px 14px;
+    }
+
+    .spec-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .spec-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .spec-val {
+      font-size: 13px;
+      font-family: var(--font-mono);
+      color: var(--text-main);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Workspace */
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1.35fr 1fr;
+      gap: 24px;
+    }
+
+    .dag-section, .sidebar-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    /* DAG Flow */
+    .dag-flow {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .dag-tier {
+      display: grid;
+      grid-template-columns: 1fr 140px 1fr;
+      align-items: center;
+      gap: 12px;
+      position: relative;
+    }
+
+    .dag-tier::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      width: 2px;
+      height: 14px;
+      background: var(--border);
+      transform: translateX(-50%);
+      z-index: 1;
+    }
+
+    .dag-tier:last-child::after {
+      display: none;
+    }
+
+    .dag-node {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+    }
+
+    .dag-node:hover {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 4px 14px rgba(0, 229, 255, 0.15);
+      transform: translateY(-2px);
+    }
+
+    .dag-node.selected {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 0 2px var(--accent-cyan-glow), 0 6px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .node-val {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-main);
+      line-height: 1.4;
+      word-break: break-all;
+    }
+
+    .node-state {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .node-state.state-same {
+      background: rgba(0, 230, 118, 0.1);
+      color: var(--status-green);
+    }
+
+    .node-state.state-diff {
+      background: rgba(255, 214, 0, 0.15);
+      color: var(--status-amber);
+    }
+
+    .node-state.state-fail {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--status-red);
+    }
+
+    .dag-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 2;
+    }
+
+    .stage-pill {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-main);
+      text-align: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+      white-space: nowrap;
+    }
+
+    .tier-earliest .stage-pill {
+      border-color: var(--status-amber);
+      color: var(--status-amber);
+      box-shadow: 0 0 16px var(--status-amber-glow);
+    }
+
+    .tier-earliest .dag-node.failing-node {
+      border-color: var(--status-amber);
+      background: rgba(255, 214, 0, 0.06);
+    }
+
+    .tier-divergent .dag-node.failing-node {
+      border-color: rgba(255, 23, 68, 0.4);
+    }
+
+    /* Inspector Panel */
+    .inspector-panel, .hypotheses-panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .hyp-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .hyp-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .hyp-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .hyp-badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .hyp-badge.supported {
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--status-green);
+    }
+
+    .hyp-badge.refuted {
+      background: rgba(255, 23, 68, 0.15);
+      color: var(--status-red);
+    }
+
+    .hyp-rationale {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .probe-card {
+      background: rgba(0, 229, 255, 0.05);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-top: 14px;
+    }
+
+    .probe-action {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent-cyan);
+      margin-bottom: 4px;
+    }
+
+    .probe-reason {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+
+    .probe-cmd {
+      background: #000;
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+    }
+
+    .probe-cmd:hover {
+      border-color: var(--accent-cyan);
+    }
+
+    /* Drag Overlay */
+    #drop-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(9, 13, 22, 0.92);
+      border: 3px dashed var(--accent-cyan);
+      backdrop-filter: blur(10px);
+      z-index: 1000;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    #drop-overlay.active {
+      display: flex;
+    }
+
+    .drop-box {
+      background: rgba(24, 34, 56, 0.9);
+      border: 1px solid var(--border-glow);
+      padding: 40px 60px;
+      border-radius: 16px;
+      text-align: center;
+      box-shadow: 0 0 30px var(--accent-cyan-glow);
+    }
+
+    /* Modal */
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      z-index: 500;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal-card {
+      background: #0d1424;
+      border: 1px solid var(--border-glow);
+      border-radius: 14px;
+      padding: 24px;
+      width: 90%;
+      max-width: 520px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .file-input-group {
+      margin-bottom: 16px;
+    }
+
+    .file-input-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    .file-input-group input[type="file"] {
+      width: 100%;
+      padding: 8px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: #fff;
+      font-size: 12px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: rgba(0, 229, 255, 0.95);
+      color: #000;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      z-index: 999;
+      display: none;
+      box-shadow: 0 4px 14px rgba(0, 229, 255, 0.4);
+    }
+  </style>
+  <script src="scenarios.js"></script>
+</head>
+<body>
+
+  <!-- Fullscreen Drag & Drop Overlay -->
+  <div id="drop-overlay">
+    <div class="drop-box">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2" style="margin-bottom: 12px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <h2 style="color: #fff; margin-bottom: 8px;">Drop .ndiff Snapshots Here</h2>
+      <p style="color: var(--text-muted); font-size: 14px;">Drop two snapshot files (Working and Failing) to run instant client-side comparison</p>
+    </div>
+  </div>
+
+  <!-- Upload Modal -->
+  <div id="upload-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 style="color: #fff; font-size: 16px; display: flex; align-items: center; gap: 8px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Upload Custom Snapshots
+        </h3>
+        <button class="btn" onclick="closeUploadModal()" style="padding: 4px 8px;">✕</button>
+      </div>
+      <div class="file-input-group">
+        <label>1. Working Snapshot (.ndiff):</label>
+        <input type="file" id="file-working" accept=".ndiff,.json">
+      </div>
+      <div class="file-input-group">
+        <label>2. Failing Snapshot (.ndiff):</label>
+        <input type="file" id="file-failing" accept=".ndiff,.json">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px;">
+        <button class="btn" onclick="closeUploadModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="processUploadedFiles()">Compare Snapshots</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand-section">
+      <a href="https://github.com/Ackintya/netdiff" target="_blank" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit;">
+        <img src="logo.svg" alt="NetDiff Logo" width="28" height="28" style="filter: drop-shadow(0 0 8px rgba(0,229,255,0.4));">
+        <div class="brand-title">NetDiff <span class="logo-badge">PLAYGROUND</span></div>
+      </a>
+      <div class="target-pill">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="8"/></svg>
+        <span id="header-target">api.internal.company:443</span>
+      </div>
+    </div>
+
+    <!-- Scenario Dropdown -->
+    <div class="scenario-selector-container">
+      <label for="scenario-select" class="selector-label">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Scenario:
+      </label>
+      <select id="scenario-select" class="scenario-dropdown" onchange="selectScenario(this.value)">
+        <option value="vpn-route-missing">⚡ Incident 1: VPN Policy Route Missing</option>
+        <option value="interface-down">🔌 Incident 2: Interface Down & MTU Mismatch</option>
+        <option value="firewall-drop">🛡️ Incident 3: Host Firewall Packet Filter Drop</option>
+        <option value="dns-resolution-failure">🌐 Incident 4: DNS Resolver Timeout & Failure</option>
+      </select>
+    </div>
+
+    <div class="header-actions">
+      <button class="btn btn-primary" onclick="openUploadModal()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload Snapshots
+      </button>
+      <button class="btn" onclick="copyBashFix()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Copy Fix
+      </button>
+      <button class="btn" onclick="downloadReport()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Post-Mortem
+      </button>
+      <a href="https://github.com/Ackintya/netdiff" target="_blank" class="btn" style="border-color: rgba(255,214,0,0.4); color: var(--status-amber);">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+
+    <!-- Playground Sub-Hero -->
+    <div class="hero-banner">
+      <div class="hero-text">
+        <strong>NetDiff Live Interactive Playground</strong> — Explore how Causal Dependency DAGs isolate the exact root cause of cross-environment network failures in milliseconds. Select an incident above or drop your own <code>.ndiff</code> snapshots.
+      </div>
+      <div style="font-size: 11px; font-family: var(--font-mono); color: var(--accent-cyan);">
+        Engine: Causal DAG v0.5.0
+      </div>
+    </div>
+
+    <!-- Alert / Root Cause Callout -->
+    <section class="root-cause-banner" id="rc-banner">
+      <div class="rc-left">
+        <div class="rc-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        </div>
+        <div>
+          <div class="rc-title">EARLIEST DIVERGENCE (ROOT CAUSE)</div>
+          <div id="rc-text" class="rc-message">Analyzing causal network dependency graph...</div>
+        </div>
+      </div>
+      <div class="status-badge failure" id="rc-status-pill">Divergent Node</div>
+    </section>
+
+    <!-- Side-by-Side Host Overview Cards -->
+    <section class="environments-grid">
+      <div class="env-card working" id="card-working">
+        <div class="env-header">
+          <div>
+            <div class="env-label">Working Environment</div>
+            <div id="working-host" class="env-hostname">host-working</div>
+          </div>
+          <div id="working-tcp-badge" class="status-badge success">✓ Connected</div>
+        </div>
+        <div class="env-specs">
+          <div class="spec-item">
+            <div class="spec-label">Route Egress</div>
+            <div id="working-iface" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Source IP</div>
+            <div id="working-source" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Routing Table</div>
+            <div id="working-table" class="spec-val">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="env-card failing" id="card-failing">
+        <div class="env-header">
+          <div>
+            <div class="env-label">Failing Environment</div>
+            <div id="failing-host" class="env-hostname">host-failing</div>
+          </div>
+          <div id="failing-tcp-badge" class="status-badge failure">✗ Timeout</div>
+        </div>
+        <div class="env-specs">
+          <div class="spec-item">
+            <div class="spec-label">Route Egress</div>
+            <div id="failing-iface" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Source IP</div>
+            <div id="failing-source" class="spec-val">-</div>
+          </div>
+          <div class="spec-item">
+            <div class="spec-label">Routing Table</div>
+            <div id="failing-table" class="spec-val">-</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Workspace: Dual Flow Tree + Inspector -->
+    <div class="workspace-grid">
+      <!-- DAG Flow Column -->
+      <section class="dag-section">
+        <div class="section-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          Dual Dependency Path Visualizer
+        </div>
+        <div id="dag-container" class="dag-flow">
+          <!-- Populated dynamically via JavaScript -->
+        </div>
+      </section>
+
+      <!-- Sidebar: Inspector + Remediation -->
+      <aside class="sidebar-section">
+        <!-- Node Inspector -->
+        <div class="inspector-panel" id="inspector">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            Component Inspector
+          </div>
+          <div id="inspector-content">
+            <p style="color: var(--text-muted); font-size: 13px;">Click any stage node in the dependency graph to inspect path attributes and causal relevance.</p>
+          </div>
+        </div>
+
+        <!-- Actionable Remediation Box -->
+        <div class="hypotheses-panel">
+          <div class="section-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--status-green)" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            Actionable Remediation Playbook
+          </div>
+
+          <div id="remediation-recommendation" class="probe-card" style="border-color: rgba(0, 230, 118, 0.4); background: rgba(0, 230, 118, 0.05); margin-top: 10px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--status-green); font-weight: 700; margin-bottom: 4px;">Verified Hotfix</div>
+            <div id="rem-explanation" style="font-size: 12px; color: var(--text-main); margin-bottom: 8px;">Explanation...</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600;">Immediate Bash Command:</div>
+            <div id="rem-cmd" class="probe-cmd" onclick="copyRemCmd()" title="Click to copy fix" style="background: rgba(0,0,0,0.5); border-color: rgba(0, 230, 118, 0.3);">
+              <span id="rem-cmd-text" style="color: var(--status-green); font-weight: 600;">sudo ...</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+            <div id="rem-verify-container" style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+              <span>Verification Probe: </span><code id="rem-verify-cmd" style="color: var(--accent-cyan); font-family: var(--font-mono);">ip ...</code>
+            </div>
+          </div>
+
+          <div id="probe-recommendation" class="probe-card" style="margin-top: 14px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--accent-cyan); font-weight: 700; margin-bottom: 4px;">Recommended Active Probe</div>
+            <div id="probe-action" class="probe-action">TEST_TCP_BIND_INTERFACE</div>
+            <div id="probe-reason" class="probe-reason">Reasoning...</div>
+            <div id="probe-cmd" class="probe-cmd" onclick="copyProbeCmd()" title="Click to copy command">
+              <span id="probe-cmd-text">netdiff probe ...</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </div>
+          </div>
+
+          <div id="hypotheses-list" style="margin-top: 14px;">
+            <!-- Hypotheses list populated via JS -->
+          </div>
+        </div>
+      </aside>
+    </div>
+
+  </main>
+
+  <div id="toast" class="toast">Copied to clipboard!</div>
+
+  <script>
+    let appData = null;
+    let scenarios = window.__NETDIFF_SCENARIOS__ || [];
+
+    function selectScenario(scenarioId) {
+      const found = scenarios.find(s => s.id === scenarioId);
+      if (found) {
+        appData = {
+          comparison: found.comparison,
+          explanation: found.explanation
+        };
+        renderDashboard(appData);
+        showToast(`Loaded ${found.title}`);
+      }
+    }
+
+    function renderDashboard(data) {
+      if (!data || !data.comparison) return;
+      const comp = data.comparison;
+      const exp = data.explanation || {};
+
+      // Header target
+      document.getElementById('header-target').textContent = comp.target.raw;
+
+      // Root Cause Banner
+      if (comp.earliest_divergence) {
+        document.getElementById('rc-text').textContent = comp.earliest_divergence;
+        document.getElementById('rc-status-pill').textContent = "Root Cause Found";
+        document.getElementById('rc-status-pill').className = "status-badge failure";
+      } else {
+        document.getElementById('rc-text').textContent = "No upstream path divergence detected.";
+        document.getElementById('rc-status-pill').textContent = "Identical Path";
+        document.getElementById('rc-status-pill').className = "status-badge success";
+      }
+
+      // Environment Cards
+      document.getElementById('working-host').textContent = comp.working_host || "working-env";
+      document.getElementById('failing-host').textContent = comp.failing_host || "failing-env";
+
+      const wSnap = comp.working_snapshot || {};
+      const fSnap = comp.failing_snapshot || {};
+
+      if (wSnap.route) {
+        document.getElementById('working-iface').textContent = wSnap.route.egress_interface || "-";
+        document.getElementById('working-source').textContent = wSnap.route.preferred_source || "-";
+        document.getElementById('working-table').textContent = wSnap.route.table_name || ("table " + wSnap.route.table);
+      }
+      if (wSnap.tcp) {
+        document.getElementById('working-tcp-badge').textContent = `✓ ${wSnap.tcp.status} (${wSnap.tcp.latency_ms || 0}ms)`;
+      }
+
+      if (fSnap.route) {
+        document.getElementById('failing-iface').textContent = fSnap.route.egress_interface || "-";
+        document.getElementById('failing-source').textContent = fSnap.route.preferred_source || "-";
+        document.getElementById('failing-table').textContent = fSnap.route.table_name || ("table " + fSnap.route.table);
+      }
+      if (fSnap.tcp) {
+        document.getElementById('failing-tcp-badge').textContent = `✗ ${fSnap.tcp.status}`;
+      }
+
+      // Render DAG Nodes
+      renderDAG(comp);
+
+      // Render Reasoning & Remediation
+      renderReasoning(exp, comp.target.raw);
+    }
+
+    function renderDAG(comp) {
+      const wSnap = comp.working_snapshot || {};
+      const fSnap = comp.failing_snapshot || {};
+      const earliest = comp.earliest_divergence || "";
+
+      const tiers = [
+        {
+          id: "Hostname",
+          label: "Target Host",
+          wVal: comp.target.host,
+          fVal: comp.target.host,
+          same: true,
+          relevance: "IGNORE"
+        },
+        {
+          id: "DNS",
+          label: "DNS Resolution",
+          wVal: formatDNS(wSnap.dns),
+          fVal: formatDNS(fSnap.dns),
+          same: formatDNS(wSnap.dns) === formatDNS(fSnap.dns),
+          relevance: "HIGH"
+        },
+        {
+          id: "Destination IP",
+          label: "Destination IP",
+          wVal: (wSnap.route && wSnap.route.destination_ip) || comp.target.host,
+          fVal: (fSnap.route && fSnap.route.destination_ip) || comp.target.host,
+          same: ((wSnap.route && wSnap.route.destination_ip) || "") === ((fSnap.route && fSnap.route.destination_ip) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Policy Rule",
+          label: "Policy Routing Rule",
+          wVal: (wSnap.route && wSnap.route.policy_rule) || "default (main)",
+          fVal: (fSnap.route && fSnap.route.policy_rule) || "default (main)",
+          same: ((wSnap.route && wSnap.route.policy_rule) || "") === ((fSnap.route && fSnap.route.policy_rule) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Route Table",
+          label: "Routing Table",
+          wVal: wSnap.route ? `table ${wSnap.route.table} (${wSnap.route.table_name || 'main'})` : "none",
+          fVal: fSnap.route ? `table ${fSnap.route.table} (${fSnap.route.table_name || 'main'})` : "none",
+          same: (wSnap.route && fSnap.route && wSnap.route.table === fSnap.route.table),
+          relevance: "HIGH"
+        },
+        {
+          id: "Route Lookup",
+          label: "Route Lookup",
+          wVal: formatRouteLookup(wSnap.route),
+          fVal: formatRouteLookup(fSnap.route),
+          same: formatRouteLookup(wSnap.route) === formatRouteLookup(fSnap.route),
+          relevance: "HIGH"
+        },
+        {
+          id: "Gateway",
+          label: "Next-Hop Gateway",
+          wVal: (wSnap.route && wSnap.route.gateway) || "direct on-link",
+          fVal: (fSnap.route && fSnap.route.gateway) || "direct on-link",
+          same: ((wSnap.route && wSnap.route.gateway) || "") === ((fSnap.route && fSnap.route.gateway) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Source Address",
+          label: "Source IP Address",
+          wVal: (wSnap.route && wSnap.route.preferred_source) || "auto",
+          fVal: (fSnap.route && fSnap.route.preferred_source) || "auto",
+          same: ((wSnap.route && wSnap.route.preferred_source) || "") === ((fSnap.route && fSnap.route.preferred_source) || ""),
+          relevance: "MEDIUM"
+        },
+        {
+          id: "Egress Interface",
+          label: "Egress Interface",
+          wVal: (wSnap.route && wSnap.route.egress_interface) || "none",
+          fVal: (fSnap.route && fSnap.route.egress_interface) || "none",
+          same: ((wSnap.route && wSnap.route.egress_interface) || "") === ((fSnap.route && fSnap.route.egress_interface) || ""),
+          relevance: "HIGH"
+        },
+        {
+          id: "Neighbor ARP",
+          label: "Neighbor ARP / NDP",
+          wVal: formatNeighbor(wSnap.neighbor),
+          fVal: formatNeighbor(fSnap.neighbor),
+          same: ((wSnap.neighbor && wSnap.neighbor.state) || "") === ((fSnap.neighbor && fSnap.neighbor.state) || "") &&
+                ((wSnap.neighbor && wSnap.neighbor.mac) || "") === ((fSnap.neighbor && fSnap.neighbor.mac) || ""),
+          relevance: "HIGH",
+          neighborData: { w: wSnap.neighbor, f: fSnap.neighbor }
+        },
+        {
+          id: "MTU",
+          label: "Interface MTU & Link",
+          wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} bytes (${wSnap.interface.oper_state || 'up'})` : "1500 bytes (up)",
+          fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} bytes (${fSnap.interface.oper_state || 'down'})` : "1500 bytes (up)",
+          same: ((wSnap.interface && wSnap.interface.mtu) || 1500) === ((fSnap.interface && fSnap.interface.mtu) || 1500) &&
+                ((wSnap.interface && wSnap.interface.oper_state) || "up") === ((fSnap.interface && fSnap.interface.oper_state) || "up"),
+          relevance: "HIGH"
+        },
+        ...( ((wSnap.firewall && wSnap.firewall.active) || (fSnap.firewall && fSnap.firewall.active)) ? [{
+          id: "Firewall",
+          label: "Host Packet Filtering",
+          wVal: (wSnap.firewall && wSnap.firewall.active) ? `active (${wSnap.firewall.backend || 'filter'})` : "inactive",
+          fVal: (fSnap.firewall && fSnap.firewall.active) ? `active (${fSnap.firewall.backend || 'filter'})` : "inactive",
+          same: (wSnap.firewall && fSnap.firewall && wSnap.firewall.active === fSnap.firewall.active),
+          relevance: "HIGH",
+          firewallData: { w: wSnap.firewall, f: fSnap.firewall }
+        }] : [] ),
+        {
+          id: "TCP",
+          label: "TCP Handshake & Telemetry",
+          wVal: formatTCP(wSnap.tcp),
+          fVal: formatTCP(fSnap.tcp),
+          same: (wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status),
+          isTCP: true,
+          relevance: "HIGH",
+          tcpData: { w: wSnap.tcp, f: fSnap.tcp }
+        },
+        ...( (wSnap.tls || fSnap.tls || (comp.target && (comp.target.port === 443 || comp.target.protocol === "https"))) ? [{
+          id: "TLS Handshake",
+          label: "TLS Handshake & Certs",
+          wVal: formatTLS(wSnap.tls),
+          fVal: formatTLS(fSnap.tls),
+          same: (wSnap.tls && fSnap.tls && wSnap.tls.handshake_success === fSnap.tls.handshake_success),
+          isTLS: true,
+          relevance: "HIGH",
+          tlsData: { w: wSnap.tls, f: fSnap.tls }
+        }] : [] )
+      ];
+
+      const container = document.getElementById('dag-container');
+      container.innerHTML = '';
+
+      tiers.forEach(tier => {
+        const isEarliest = earliest.toLowerCase().includes(tier.id.toLowerCase());
+        const isDivergent = !tier.same;
+
+        let tierClass = "dag-tier";
+        if (isEarliest) tierClass += " tier-earliest";
+        else if (isDivergent) tierClass += " tier-divergent";
+
+        const row = document.createElement('div');
+        row.className = tierClass;
+
+        // Working Node
+        const wNode = document.createElement('div');
+        wNode.className = "dag-node working-node";
+        wNode.innerHTML = `
+          <div class="node-header">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">WORKING</span>
+            <span class="node-state ${tier.same ? 'state-same' : 'state-diff'}">${tier.same ? '✓ MATCH' : '⚠ DIFFERENT'}</span>
+          </div>
+          <div class="node-val">${escapeHtml(tier.wVal)}</div>
+        `;
+        wNode.onclick = () => selectNode(tier);
+
+        // Center Connector
+        const center = document.createElement('div');
+        center.className = "dag-connector";
+        center.innerHTML = `
+          <div class="stage-pill" title="${tier.label}">${escapeHtml(tier.label)}</div>
+          ${isEarliest ? '<div style="font-size: 9px; font-weight: 800; color: var(--status-amber); margin-top: 3px; letter-spacing: 0.5px;">ROOT CAUSE</div>' : ''}
+        `;
+
+        // Failing Node
+        const fNode = document.createElement('div');
+        fNode.className = "dag-node failing-node";
+        const failStatusClass = (tier.isTCP || tier.isTLS) && !tier.same ? 'state-fail' : (tier.same ? 'state-same' : 'state-diff');
+        const failStatusLabel = (tier.isTCP || tier.isTLS) && !tier.same ? '✗ FAIL' : (tier.same ? '✓ MATCH' : '⚠ DIVERGENT');
+        fNode.innerHTML = `
+          <div class="node-header">
+            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">FAILING</span>
+            <span class="node-state ${failStatusClass}">${failStatusLabel}</span>
+          </div>
+          <div class="node-val">${escapeHtml(tier.fVal)}</div>
+        `;
+        fNode.onclick = () => selectNode(tier);
+
+        row.appendChild(wNode);
+        row.appendChild(center);
+        row.appendChild(fNode);
+
+        container.appendChild(row);
+      });
+
+      const initial = tiers.find(t => earliest.toLowerCase().includes(t.id.toLowerCase())) || tiers[3];
+      selectNode(initial);
+    }
+
+    function selectNode(tier) {
+      document.querySelectorAll('.dag-node').forEach(el => el.classList.remove('selected'));
+
+      const comp = appData ? appData.comparison : null;
+      let matchingDiff = null;
+      if (comp && comp.differences) {
+        matchingDiff = comp.differences.find(d => 
+          (d.dependency_node && tier.id.toLowerCase().includes(d.dependency_node.toLowerCase())) ||
+          (d.category && tier.id.toLowerCase().includes(d.category.toLowerCase()))
+        );
+      }
+
+      let extraHTML = '';
+      if (matchingDiff && matchingDiff.rationale) {
+        extraHTML += `
+          <div style="margin-top: 14px; padding: 12px; background: rgba(255, 214, 0, 0.08); border-left: 3px solid var(--status-amber); border-radius: 6px; font-size: 13px; line-height: 1.5; color: #fff;">
+            <strong style="color: var(--status-amber);">Causal Rationale:</strong> ${escapeHtml(matchingDiff.rationale)}
+          </div>
+        `;
+      }
+
+      const inspector = document.getElementById('inspector-content');
+      inspector.innerHTML = `
+        <div style="font-size: 15px; font-weight: 700; color: #fff; margin-bottom: 8px;">${escapeHtml(tier.label)}</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <span class="node-state ${tier.same ? 'state-same' : 'state-diff'}">${tier.same ? 'MATCHING' : 'DIVERGENT'}</span>
+          <span style="font-size: 11px; color: var(--text-muted); padding: 2px 0;">Relevance: ${tier.relevance}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 8px; font-family: var(--font-mono); font-size: 12px;">
+          <div>
+            <div style="font-size: 10px; color: var(--status-green); font-weight: 700;">WORKING</div>
+            <div style="margin-top: 4px; color: #fff; word-break: break-all;">${escapeHtml(tier.wVal)}</div>
+          </div>
+          <div>
+            <div style="font-size: 10px; color: var(--status-red); font-weight: 700;">FAILING</div>
+            <div style="margin-top: 4px; color: #fff; word-break: break-all;">${escapeHtml(tier.fVal)}</div>
+          </div>
+        </div>
+        ${extraHTML}
+      `;
+    }
+
+    function renderReasoning(exp, targetRaw) {
+      const hypList = document.getElementById('hypotheses-list');
+      hypList.innerHTML = '';
+
+      if (exp.hypotheses && exp.hypotheses.length > 0) {
+        exp.hypotheses.forEach(h => {
+          const card = document.createElement('div');
+          card.className = "hyp-card";
+          const badgeClass = h.support_level === 'SUPPORTED' ? 'supported' : 'refuted';
+          card.innerHTML = `
+            <div class="hyp-header">
+              <span class="hyp-title">${escapeHtml(h.title)}</span>
+              <span class="hyp-badge ${badgeClass}">${escapeHtml(h.support_level)}</span>
+            </div>
+            <div class="hyp-rationale">${escapeHtml(h.rationale)}</div>
+          `;
+          hypList.appendChild(card);
+        });
+      }
+
+      if (exp.remediation) {
+        document.getElementById('rem-explanation').textContent = exp.remediation.explanation || 'Verified resolution for root cause divergence.';
+        document.getElementById('rem-cmd-text').textContent = exp.remediation.immediate_bash || 'sudo ...';
+        if (exp.remediation.verification_cmd) {
+          document.getElementById('rem-verify-cmd').textContent = exp.remediation.verification_cmd;
+          document.getElementById('rem-verify-container').style.display = 'block';
+        } else {
+          document.getElementById('rem-verify-container').style.display = 'none';
+        }
+      }
+
+      if (exp.next_best_probe) {
+        document.getElementById('probe-action').textContent = `${exp.next_best_probe.probe_name}(${exp.next_best_probe.parameter || ''})`;
+        document.getElementById('probe-reason').textContent = exp.next_best_probe.reason || '';
+        const cmd = `netdiff probe ${exp.next_best_probe.probe_name} ${exp.next_best_probe.parameter || ''} -t ${targetRaw}`.trim();
+        document.getElementById('probe-cmd-text').textContent = cmd;
+      }
+    }
+
+    function copyRemCmd() {
+      const text = document.getElementById('rem-cmd-text').textContent;
+      navigator.clipboard.writeText(text).then(() => showToast("Copied Bash remediation to clipboard!"));
+    }
+
+    function copyBashFix() {
+      copyRemCmd();
+    }
+
+    function copyProbeCmd() {
+      const text = document.getElementById('probe-cmd-text').textContent;
+      navigator.clipboard.writeText(text).then(() => showToast("Copied validation probe command!"));
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.textContent = msg;
+      toast.style.display = 'block';
+      setTimeout(() => { toast.style.display = 'none'; }, 2400);
+    }
+
+    function downloadReport() {
+      if (!appData || !appData.comparison) return;
+      const comp = appData.comparison;
+      const exp = appData.explanation || {};
+      const md = `# NetDiff Incident Post-Mortem Report: ${comp.target.raw}
+Date: ${new Date().toISOString()}
+Target: ${comp.target.raw}
+Root Cause: ${comp.earliest_divergence || 'None'}
+
+## Actionable Remediation
+Immediate Command:
+\`\`\`bash
+${(exp.remediation && exp.remediation.immediate_bash) || 'N/A'}
+\`\`\`
+
+Verification:
+\`\`\`bash
+${(exp.remediation && exp.remediation.verification_cmd) || 'N/A'}
+\`\`\`
+
+Rationale:
+${(exp.remediation && exp.remediation.explanation) || 'N/A'}
+`;
+      const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `netdiff-incident-${comp.target.host}.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      showToast("Downloaded Incident Post-Mortem Markdown!");
+    }
+
+    /* Modal & File Upload Logic */
+    function openUploadModal() {
+      document.getElementById('upload-modal').classList.add('active');
+    }
+
+    function closeUploadModal() {
+      document.getElementById('upload-modal').classList.remove('active');
+    }
+
+    async function processUploadedFiles() {
+      const fWorking = document.getElementById('file-working').files[0];
+      const fFailing = document.getElementById('file-failing').files[0];
+
+      if (!fWorking || !fFailing) {
+        alert("Please select both a Working and Failing .ndiff file.");
+        return;
+      }
+
+      try {
+        const textA = await fWorking.text();
+        const textB = await fFailing.text();
+        const snapA = JSON.parse(textA);
+        const snapB = JSON.parse(textB);
+
+        runClientSideDiff(snapA, snapB);
+        closeUploadModal();
+        showToast("Successfully compared uploaded snapshots!");
+      } catch (err) {
+        alert("Error parsing snapshot files: " + err.message);
+      }
+    }
+
+    /* Drag and Drop Handling */
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      document.getElementById('drop-overlay').classList.add('active');
+    });
+
+    document.getElementById('drop-overlay').addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      document.getElementById('drop-overlay').classList.remove('active');
+    });
+
+    document.getElementById('drop-overlay').addEventListener('drop', async (e) => {
+      e.preventDefault();
+      document.getElementById('drop-overlay').classList.remove('active');
+
+      const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.ndiff') || f.name.endsWith('.json'));
+      if (files.length < 2) {
+        alert("Please drop at least two .ndiff snapshot files (one working, one failing).");
+        return;
+      }
+
+      try {
+        const textA = await files[0].text();
+        const textB = await files[1].text();
+        const snapA = JSON.parse(textA);
+        const snapB = JSON.parse(textB);
+
+        runClientSideDiff(snapA, snapB);
+        showToast(`Compared ${files[0].name} vs ${files[1].name}!`);
+      } catch (err) {
+        alert("Error processing dropped snapshots: " + err.message);
+      }
+    });
+
+    /* Client-side comparator for custom uploaded snapshots */
+    function runClientSideDiff(snapA, snapB) {
+      let isAFailing = (snapA.tcp && snapA.tcp.status !== "connected") || (snapA.dns && !snapA.dns.success);
+      let working = isAFailing ? snapB : snapA;
+      let failing = isAFailing ? snapA : snapB;
+
+      let target = working.target || failing.target || { raw: "unknown:0", host: "unknown", port: 0, protocol: "tcp" };
+      let earliest = "";
+      let remCmd = "sudo ip route get " + (target.host || "");
+      let remVerify = "ip route show";
+      let remReason = "Restore network path parity with working host.";
+
+      // Earliest divergence detection
+      if (working.dns && failing.dns && working.dns.success !== failing.dns.success) {
+        earliest = "DNS: Resolution failed in failing environment";
+        remCmd = `resolvectl query ${target.host}`;
+        remVerify = `dig ${target.host}`;
+        remReason = "Fix DNS server connectivity and nameserver settings.";
+      } else if (working.route && failing.route && (working.route.policy_rule || "") !== (failing.route.policy_rule || "")) {
+        earliest = `Policy Rule: ${working.route.policy_rule || 'none'} ≠ ${failing.route.policy_rule || 'main'}`;
+        const dest = (failing.route && failing.route.destination_ip) || target.host;
+        remCmd = `sudo ip rule add to ${dest}/32 lookup ${working.route.table || 200}`;
+        remVerify = `ip rule show | grep ${working.route.table || 200}`;
+        remReason = `Directs traffic for ${dest} via table ${working.route.table || 200} matching working environment.`;
+      } else if (working.route && failing.route && (working.route.egress_interface || "") !== (failing.route.egress_interface || "")) {
+        earliest = `Egress Interface: ${working.route.egress_interface} ≠ ${failing.route.egress_interface}`;
+        remCmd = `sudo ip route add ${target.host} dev ${working.route.egress_interface}`;
+        remVerify = `ip route get ${target.host}`;
+        remReason = `Restores egress routing via ${working.route.egress_interface}.`;
+      } else if (working.interface && failing.interface && working.interface.oper_state !== failing.interface.oper_state) {
+        earliest = `Interface State: ${working.interface.name} (${working.interface.oper_state}) ≠ ${failing.interface.name} (${failing.interface.oper_state})`;
+        remCmd = `sudo ip link set dev ${failing.interface.name} up`;
+        remVerify = `ip link show dev ${failing.interface.name}`;
+        remReason = `Brings up administratively downed interface ${failing.interface.name}.`;
+      } else if (failing.firewall && failing.firewall.active && (!working.firewall || !working.firewall.active)) {
+        earliest = "Firewall: Packet filter active on failing environment";
+        remCmd = `sudo iptables -D OUTPUT -p ${target.protocol} --dport ${target.port} -j DROP`;
+        remVerify = `sudo iptables -L OUTPUT -n -v`;
+        remReason = `Removes packet filter drop rule on port ${target.port}.`;
+      } else {
+        earliest = "TCP: Handshake timeout on target port";
+      }
+
+      appData = {
+        comparison: {
+          target: target,
+          working_host: (working.metadata && working.metadata.hostname) || "working-host",
+          failing_host: (failing.metadata && failing.metadata.hostname) || "failing-host",
+          working_snapshot: working,
+          failing_snapshot: failing,
+          earliest_divergence: earliest
+        },
+        explanation: {
+          summary: earliest,
+          hypotheses: [
+            {
+              title: earliest,
+              support_level: "SUPPORTED",
+              rationale: `Direct causal divergence identified in path between ${working.metadata ? working.metadata.hostname : 'working'} and ${failing.metadata ? failing.metadata.hostname : 'failing'}.`
+            }
+          ],
+          remediation: {
+            immediate_bash: remCmd,
+            verification_cmd: remVerify,
+            explanation: remReason
+          },
+          next_best_probe: {
+            probe_name: "TEST_DIRECT_IP",
+            parameter: (working.route && working.route.destination_ip) || "",
+            reason: "Verifies basic IP reachability isolating routing from upper-layer filters."
+          }
+        }
+      };
+
+      renderDashboard(appData);
+    }
+
+    // Initialize with first scenario
+    window.addEventListener('DOMContentLoaded', () => {
+      if (scenarios.length > 0) {
+        selectScenario(scenarios[0].id);
+      }
+    });
+
+    function formatNeighbor(n) {
+      if (!n || !n.ip) return "none";
+      const mac = n.mac || "no-mac";
+      const state = n.state || "REACHABLE";
+      return `${n.ip} → ${mac} (${state})`;
+    }
+
+    function formatTCP(t) {
+      if (!t) return "unknown";
+      if (t.status !== "connected") {
+        return t.error ? `${t.status} (${t.error})` : `${t.status}`;
+      }
+      return `connected (${t.latency_ms || 0}ms)`;
+    }
+
+    function formatTLS(t) {
+      if (!t) return "not performed";
+      if (!t.handshake_success) return `failed (${t.error || 'unknown'})`;
+      return `✓ ${t.version || 'TLS'} (${t.cipher_suite || 'cipher'})`;
+    }
+
+    function formatDNS(dns) {
+      if (!dns) return "none";
+      if (!dns.success) return "failed (" + (dns.error || "unknown") + ")";
+      if (dns.a_records && dns.a_records.length > 0) return dns.a_records.join(", ");
+      return "resolved";
+    }
+
+    function formatRouteLookup(route) {
+      if (!route) return "unknown";
+      if (route.success) return "success";
+      if (route.error) return "failed: " + route.error;
+      return "failed";
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

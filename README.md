@@ -17,6 +17,10 @@
 </p>
 
 <p align="center">
+  <a href="https://ackintya.github.io/netdiff/"><img src="https://img.shields.io/badge/%F0%9F%9A%80_Live_Demo-Try_Web_Playground-00E5FF?style=for-the-badge&logo=googlechrome&logoColor=black" alt="Live Web Playground"></a>
+</p>
+
+<p align="center">
   <strong>NetDiff explains why a network connection works in one environment and fails in another.</strong><br>
   Capture target-specific state into portable snapshots, model connections as a causal dependency graph, and pinpoint the earliest root-cause divergence in seconds.
 </p>
@@ -61,6 +65,16 @@ netdiff capture api.internal.corp:443 -o bad.ndiff
 
 # Compare and render the causal dependency graph:
 netdiff graph good.ndiff bad.ndiff
+```
+
+### 3. Frictionless Remote Triage via SSH (New in v0.5.0)
+Triage remote staging or production servers without manual `scp` file transfers:
+```bash
+# Compare your local machine against remote staging host over SSH in ONE command:
+netdiff compare api.internal.corp:443 --remote deploy@staging-host
+
+# Or export an ultra-crisp dark-mode vector SVG card directly for Slack, Jira, or PRs:
+netdiff graph good.ndiff bad.ndiff --export incident.svg
 ```
 
 ---
@@ -275,14 +289,14 @@ NetDiff distinguishes between common real-world networking problems:
 |---|---|
 | `netdiff diagnose <target>` | Single-command diagnosis comparing against saved baseline |
 | `netdiff check <target>` | Fast reachability probe with one-line status summary |
-| `netdiff capture <target> -o <file>` | Capture target network state to console or `.ndiff` snapshot |
-| `netdiff compare <good> <bad> [-g] [-v] [-j]` | Compare two snapshots and rank causal path differences |
-| `netdiff graph <good> <bad> [--no-ai]` | Render terminal ASCII/Unicode causal dependency graph tree |
+| `netdiff capture <target> [-o file] [--remote host]` | Capture target network state locally or remotely via SSH |
+| `netdiff compare <good> <bad> [--remote host] [--export file]` | Compare snapshots and rank causal path differences |
+| `netdiff graph <good> <bad> [--remote host] [--export file.svg]` | Render terminal ASCII tree or export publication-ready vector SVG |
 | `netdiff explain <good> <bad> [--no-ai]` | Synthesize diagnostic explanation and remediation playbook |
 | `netdiff ask <good> <bad> "<question>"` | Ask conversational debugging questions grounded in snapshot evidence |
 | `netdiff fix <good> <bad> [--apply]` | Guarded automated remediation with canary probe & rollback protection |
 | `netdiff watch <target> [--interval 30s]` | Proactive baseline drift monitor auditing network state continuously |
-| `netdiff report <good> <bad> [--html -o file]` | Generate Markdown or standalone interactive HTML incident report |
+| `netdiff report <good> <bad> [-o file.svg\|file.html]` | Generate Markdown, interactive HTML, or vector SVG incident report |
 | `netdiff ui <good> <bad> [-p 8080]` | Launch interactive browser visualizer comparing dual dependency DAGs |
 | `netdiff auth [key]` | Configure Gemini API key for AI reasoning and diagnosis |
 | `netdiff config <show\|set-key\|clear>` | Manage persistent NetDiff configuration (`~/.netdiff/config.json`) |

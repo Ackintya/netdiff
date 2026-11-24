@@ -1,11 +1,13 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"netdiff/internal/ai"
+	"netdiff/pkg/model"
 )
 
 func TestSanitizeTarget(t *testing.T) {
@@ -77,6 +79,13 @@ func TestReorderArgs(t *testing.T) {
 	if watchReordered[0] != "--interval" || watchReordered[1] != "10s" {
 		t.Errorf("expected --interval 10s first in watch reorder, got: %v", watchReordered)
 	}
+
+	// Test export and remote flag reordering
+	exportArgs := []string{"good.ndiff", "bad.ndiff", "--export", "out.svg", "--remote", "staging-host"}
+	exportReordered := reorderArgs(exportArgs)
+	if exportReordered[0] != "--export" || exportReordered[1] != "out.svg" || exportReordered[2] != "--remote" || exportReordered[3] != "staging-host" {
+		t.Errorf("unexpected reorder for --export and --remote: %v", exportReordered)
+	}
 }
 
 func TestShouldEnableAI(t *testing.T) {
@@ -101,5 +110,44 @@ func TestShouldEnableAI(t *testing.T) {
 	// 4. Without key, even with --ai passed, should return false (after printing prompt)
 	if shouldEnableAI(true, false, withoutKey) {
 		t.Errorf("expected shouldEnableAI to return false when key is missing")
+	}
+}
+
+func TestHandleExport(t *testing.T) {
+	tmpDir := t.TempDir()
+	svgPath := filepath.Join(tmpDir, "test.svg")
+	htmlPath := filepath.Join(tmpDir, "test.html")
+
+	comp := &model.ComparisonReport{
+		Target: model.Target{
+			Raw:  "api.corp:443",
+			Host: "api.corp",
+			Port: 443,
+		},
+		WorkingSnapshot: &model.Snapshot{},
+		FailingSnapshot: &model.Snapshot{},
+	}
+	exp := &ai.ExplanationReport{
+		Summary: "Summary",
+	}
+
+	// 1. Export SVG
+	handleExport(svgPath, comp, exp)
+	svgData, err := os.ReadFile(svgPath)
+	if err != nil {
+		t.Fatalf("failed to read exported SVG: %v", err)
+	}
+	if !strings.Contains(string(svgData), "<svg") {
+		t.Errorf("expected exported SVG to contain <svg")
+	}
+
+	// 2. Export HTML
+	handleExport(htmlPath, comp, exp)
+	htmlData, err := os.ReadFile(htmlPath)
+	if err != nil {
+		t.Fatalf("failed to read exported HTML: %v", err)
+	}
+	if !strings.Contains(string(htmlData), "<!DOCTYPE html>") {
+		t.Errorf("expected exported HTML to contain <!DOCTYPE html>")
 	}
 }

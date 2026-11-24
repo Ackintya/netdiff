@@ -16,6 +16,7 @@ import (
 	"netdiff/internal/printer"
 	"netdiff/internal/probe"
 	"netdiff/internal/remediation"
+	"netdiff/internal/remote"
 	"netdiff/internal/report"
 	"netdiff/internal/snapshot"
 	"netdiff/internal/target"
@@ -67,13 +68,20 @@ Flags for 'check':
 
 Flags for 'capture':
   -o, --output <file>     Path to output .ndiff snapshot file (default: prints summary)
+  --remote <host>         Capture network state remotely via SSH (e.g. user@staging)
 
 Flags for 'compare':
   -g, --graph             Render terminal causal dependency graph
   -v, --verbose           Show lower-priority path differences
   -j, --json              Output machine-readable JSON comparison
+  --remote <host>         Capture second snapshot remotely via SSH
+  --export, -o <file>     Export visual graph to file (.svg vector or .html)
+  -b, --baseline <file>   Use custom baseline snapshot
 
 Flags for 'graph':
+  --export, -o <file>     Export visual graph to file (.svg vector or .html)
+  --remote <host>         Capture second snapshot remotely via SSH
+  -b, --baseline <file>   Use custom baseline snapshot
   --ai                    Force Gemini AI reasoning synthesis layer
   --no-ai                 Disable Gemini AI reasoning
 
@@ -389,6 +397,7 @@ func runCapture(args []string) {
 	fs := flag.NewFlagSet("capture", flag.ExitOnError)
 	outputFile := fs.String("o", "", "Path to output .ndiff snapshot file")
 	fs.StringVar(outputFile, "output", "", "Path to output .ndiff snapshot file")
+	remoteHost := fs.String("remote", "", "Execute capture remotely via SSH (e.g. user@staging)")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -407,15 +416,28 @@ func runCapture(args []string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Capturing target-specific network state for %s...\n", tgt.Raw)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	var snap *model.Snapshot
+	if *remoteHost != "" {
+		fmt.Printf("Capturing remote network state for %s via ssh to %s...\n", tgt.Raw, *remoteHost)
+		sshClient := remote.NewClient()
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+		snap, err = sshClient.CaptureSnapshot(ctx, *remoteHost, tgt.Raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Remote capture error: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		fmt.Printf("Capturing target-specific network state for %s...\n", tgt.Raw)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-	engine := probe.NewEngine()
-	snap, err := engine.Capture(ctx, tgt)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error during capture: %v\n", err)
-		os.Exit(1)
+		engine := probe.NewEngine()
+		snap, err = engine.Capture(ctx, tgt)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error during capture: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	p := printer.New()
@@ -438,6 +460,11 @@ func runCompare(args []string) {
 	fs.BoolVar(asJSON, "json", false, "Output machine-readable JSON")
 	graphFlag := fs.Bool("g", false, "Render terminal causal dependency graph")
 	fs.BoolVar(graphFlag, "graph", false, "Render terminal causal dependency graph")
+	exportFile := fs.String("export", "", "Export visual graph to file (.svg or .html)")
+	fs.StringVar(exportFile, "o", "", "Export visual graph to file (.svg or .html)")
+	remoteHost := fs.String("remote", "", "Capture second snapshot remotely via SSH (e.g. user@staging)")
+	baselineFile := fs.String("b", "", "Custom baseline snapshot")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline snapshot")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -445,29 +472,95 @@ func runCompare(args []string) {
 	}
 
 	files := fs.Args()
-	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: compare requires two snapshot files: netdiff compare <good.ndiff> <bad.ndiff>")
-		os.Exit(1)
-	}
+	var snapA, snapB *model.Snapshot
+	var err error
 
-	snapA, err := snapshot.Load(files[0])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
-		os.Exit(1)
-	}
+	if *remoteHost != "" {
+		if len(files) < 1 {
+			fmt.Fprintln(os.Stderr, "Error: compare with --remote requires a target or local snapshot (e.g. netdiff compare api.corp:443 --remote staging)")
+			os.Exit(1)
+		}
 
-	snapB, err := snapshot.Load(files[1])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
-		os.Exit(1)
+		sshClient := remote.NewClient()
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+
+		if _, statErr := os.Stat(files[0]); statErr == nil {
+			snapA, err = snapshot.Load(files[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+				os.Exit(1)
+			}
+			fmt.Printf("Capturing remote snapshot for %s via ssh to %s...\n", snapA.Target.Raw, *remoteHost)
+			snapB, err = sshClient.CaptureSnapshot(ctx, *remoteHost, snapA.Target.Raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Remote capture error: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			tgt, parseErr := target.Parse(files[0])
+			if parseErr != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", files[0], parseErr)
+				os.Exit(1)
+			}
+
+			bPath := *baselineFile
+			if bPath == "" {
+				bPath, _ = defaultBaselinePath(tgt.Raw)
+			}
+			if _, statErr := os.Stat(bPath); statErr == nil {
+				snapA, err = snapshot.Load(bPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+					os.Exit(1)
+				}
+			} else {
+				fmt.Printf("Capturing local snapshot for %s...\n", tgt.Raw)
+				engine := probe.NewEngine()
+				snapA, err = engine.Capture(ctx, tgt)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error capturing local snapshot: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
+			fmt.Printf("Capturing remote snapshot for %s via ssh to %s...\n", tgt.Raw, *remoteHost)
+			snapB, err = sshClient.CaptureSnapshot(ctx, *remoteHost, tgt.Raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Remote capture error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	} else {
+		if len(files) < 2 {
+			fmt.Fprintln(os.Stderr, "Error: compare requires two snapshot files: netdiff compare <good.ndiff> <bad.ndiff>")
+			os.Exit(1)
+		}
+
+		snapA, err = snapshot.Load(files[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+			os.Exit(1)
+		}
+
+		snapB, err = snapshot.Load(files[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
+			os.Exit(1)
+		}
 	}
 
 	comparison := diff.Compare(snapA, snapB)
-	p := printer.New()
+	reasoner := ai.NewReasoner()
+	explanation, _ := reasoner.Explain(context.Background(), comparison, false)
 
+	if *exportFile != "" {
+		handleExport(*exportFile, comparison, explanation)
+		return
+	}
+
+	p := printer.New()
 	if *graphFlag {
-		reasoner := ai.NewReasoner()
-		explanation, _ := reasoner.Explain(context.Background(), comparison, false)
 		p.PrintGraph(comparison, explanation)
 		return
 	}
@@ -482,6 +575,11 @@ func runGraph(args []string) {
 	fs := flag.NewFlagSet("graph", flag.ExitOnError)
 	aiFlag := fs.Bool("ai", false, "Force Gemini AI reasoning synthesis layer")
 	noAIFlag := fs.Bool("no-ai", false, "Disable Gemini AI reasoning and use local deterministic engine")
+	exportFile := fs.String("export", "", "Export visual graph to file (.svg or .html)")
+	fs.StringVar(exportFile, "o", "", "Export visual graph to file (.svg or .html)")
+	remoteHost := fs.String("remote", "", "Capture second snapshot remotely via SSH (e.g. user@staging)")
+	baselineFile := fs.String("b", "", "Custom baseline snapshot")
+	fs.StringVar(baselineFile, "baseline", "", "Custom baseline snapshot")
 
 	args = reorderArgs(args)
 	if err := fs.Parse(args); err != nil {
@@ -489,21 +587,82 @@ func runGraph(args []string) {
 	}
 
 	files := fs.Args()
-	if len(files) < 2 {
-		fmt.Fprintln(os.Stderr, "Error: graph requires two snapshot files: netdiff graph <good.ndiff> <bad.ndiff> [--ai] [--no-ai]")
-		os.Exit(1)
-	}
+	var snapA, snapB *model.Snapshot
+	var err error
 
-	snapA, err := snapshot.Load(files[0])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
-		os.Exit(1)
-	}
+	if *remoteHost != "" {
+		if len(files) < 1 {
+			fmt.Fprintln(os.Stderr, "Error: graph with --remote requires a target or local snapshot (e.g. netdiff graph api.corp:443 --remote staging)")
+			os.Exit(1)
+		}
 
-	snapB, err := snapshot.Load(files[1])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
-		os.Exit(1)
+		sshClient := remote.NewClient()
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		defer cancel()
+
+		if _, statErr := os.Stat(files[0]); statErr == nil {
+			snapA, err = snapshot.Load(files[0])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+				os.Exit(1)
+			}
+			fmt.Printf("Capturing remote snapshot for %s via ssh to %s...\n", snapA.Target.Raw, *remoteHost)
+			snapB, err = sshClient.CaptureSnapshot(ctx, *remoteHost, snapA.Target.Raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Remote capture error: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			tgt, parseErr := target.Parse(files[0])
+			if parseErr != nil {
+				fmt.Fprintf(os.Stderr, "Error parsing target %q: %v\n", files[0], parseErr)
+				os.Exit(1)
+			}
+
+			bPath := *baselineFile
+			if bPath == "" {
+				bPath, _ = defaultBaselinePath(tgt.Raw)
+			}
+			if _, statErr := os.Stat(bPath); statErr == nil {
+				snapA, err = snapshot.Load(bPath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error loading baseline %s: %v\n", bPath, err)
+					os.Exit(1)
+				}
+			} else {
+				fmt.Printf("Capturing local snapshot for %s...\n", tgt.Raw)
+				engine := probe.NewEngine()
+				snapA, err = engine.Capture(ctx, tgt)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error capturing local snapshot: %v\n", err)
+					os.Exit(1)
+				}
+			}
+
+			fmt.Printf("Capturing remote snapshot for %s via ssh to %s...\n", tgt.Raw, *remoteHost)
+			snapB, err = sshClient.CaptureSnapshot(ctx, *remoteHost, tgt.Raw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Remote capture error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	} else {
+		if len(files) < 2 {
+			fmt.Fprintln(os.Stderr, "Error: graph requires two snapshot files: netdiff graph <good.ndiff> <bad.ndiff> [--ai] [--no-ai]")
+			os.Exit(1)
+		}
+
+		snapA, err = snapshot.Load(files[0])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[0], err)
+			os.Exit(1)
+		}
+
+		snapB, err = snapshot.Load(files[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading %s: %v\n", files[1], err)
+			os.Exit(1)
+		}
 	}
 
 	comparison := diff.Compare(snapA, snapB)
@@ -511,8 +670,35 @@ func runGraph(args []string) {
 	useAI := shouldEnableAI(*aiFlag, *noAIFlag, reasoner)
 	explanation, _ := reasoner.Explain(context.Background(), comparison, useAI)
 
+	if *exportFile != "" {
+		handleExport(*exportFile, comparison, explanation)
+		return
+	}
+
 	p := printer.New()
 	p.PrintGraph(comparison, explanation)
+}
+
+func handleExport(exportPath string, comparison *model.ComparisonReport, explanation *ai.ExplanationReport) {
+	lower := strings.ToLower(exportPath)
+	if strings.HasSuffix(lower, ".svg") {
+		svgData := printer.RenderSVG(comparison, explanation)
+		if err := os.WriteFile(exportPath, []byte(svgData), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving SVG to %s: %v\n", exportPath, err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Saved Causal DAG vector SVG to %s\n", exportPath)
+	} else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
+		htmlData := report.GenerateHTML(comparison, explanation)
+		if err := os.WriteFile(exportPath, []byte(htmlData), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving HTML to %s: %v\n", exportPath, err)
+			os.Exit(1)
+		}
+		fmt.Printf("✓ Saved interactive HTML report to %s\n", exportPath)
+	} else {
+		fmt.Fprintf(os.Stderr, "Error: unsupported export format for %q (expected .svg or .html)\n", exportPath)
+		os.Exit(1)
+	}
 }
 
 func runExplain(args []string) {
@@ -1100,15 +1286,20 @@ func runReport(args []string) {
 	explanation, _ := reasoner.Explain(context.Background(), comparison, useAI)
 
 	isHTML := *htmlFlag
+	isSVG := false
 	if *outputFile != "" {
 		lower := strings.ToLower(*outputFile)
-		if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
+		if strings.HasSuffix(lower, ".svg") {
+			isSVG = true
+		} else if strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm") {
 			isHTML = true
 		}
 	}
 
 	var content string
-	if isHTML {
+	if isSVG {
+		content = printer.RenderSVG(comparison, explanation)
+	} else if isHTML {
 		content = report.GenerateHTML(comparison, explanation)
 	} else {
 		content = report.GenerateMarkdown(comparison, explanation)
@@ -1119,7 +1310,9 @@ func runReport(args []string) {
 			fmt.Fprintf(os.Stderr, "Error writing report file: %v\n", err)
 			os.Exit(1)
 		}
-		if isHTML {
+		if isSVG {
+			fmt.Printf("✓ Saved Causal DAG vector SVG to %s\n", *outputFile)
+		} else if isHTML {
 			fmt.Printf("✓ Saved interactive HTML report to %s\n", *outputFile)
 		} else {
 			fmt.Printf("✓ Saved incident report to %s\n", *outputFile)
@@ -1269,7 +1462,7 @@ func reorderArgs(args []string) []string {
 		arg := args[i]
 		if strings.HasPrefix(arg, "-") {
 			flags = append(flags, arg)
-			if (arg == "-o" || arg == "--output" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port" || arg == "-b" || arg == "--baseline" || arg == "--interval" || arg == "--count" || arg == "--timeout") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+			if (arg == "-o" || arg == "--output" || arg == "--export" || arg == "--remote" || arg == "-t" || arg == "--target" || arg == "-p" || arg == "--port" || arg == "-b" || arg == "--baseline" || arg == "--interval" || arg == "--count" || arg == "--timeout") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
 				i++
 				flags = append(flags, args[i])
 			}
