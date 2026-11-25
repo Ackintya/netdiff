@@ -3,725 +3,603 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NetDiff - Network Path Causal Visualization</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <title>NetDiff — Causal Network Diagnostics</title>
   <style>
     :root {
-      --bg: #090d16;
-      --bg-panel: rgba(18, 25, 41, 0.75);
-      --bg-card: rgba(24, 34, 56, 0.85);
-      --border: rgba(56, 75, 112, 0.4);
-      --border-glow: rgba(0, 229, 255, 0.35);
-      --text-main: #f0f4fc;
-      --text-muted: #8899b8;
-      --accent-cyan: #00e5ff;
-      --accent-cyan-glow: rgba(0, 229, 255, 0.25);
-      --accent-purple: #7c4dff;
-      --status-green: #00e676;
-      --status-green-glow: rgba(0, 230, 118, 0.2);
-      --status-amber: #ffd600;
-      --status-amber-glow: rgba(255, 214, 0, 0.25);
-      --status-red: #ff1744;
-      --status-red-glow: rgba(255, 23, 68, 0.25);
-      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      --font-mono: 'JetBrains Mono', monospace;
+      --bg-canvas: #ffffff;
+      --bg-subtle: #f6f8fa;
+      --bg-inset: #eff1f3;
+      --border-default: #d0d7de;
+      --border-muted: #e5e7eb;
+      --fg-default: #1f2328;
+      --fg-muted: #656d76;
+      --accent-fg: #0969da;
+      --accent-subtle: #ddf4ff;
+      --success-fg: #1a7f37;
+      --success-subtle: #dafbe1;
+      --success-border: rgba(26, 127, 55, 0.28);
+      --attention-fg: #9a6700;
+      --attention-subtle: #fff8c5;
+      --attention-border: rgba(154, 103, 0, 0.35);
+      --danger-fg: #cf222e;
+      --danger-subtle: #ffebe9;
+      --danger-border: rgba(207, 34, 46, 0.28);
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+      --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --radius-md: 6px;
+      --radius-lg: 8px;
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg-canvas: #0d1117;
+        --bg-subtle: #161b22;
+        --bg-inset: #21262d;
+        --border-default: #30363d;
+        --border-muted: #21262d;
+        --fg-default: #e6edf3;
+        --fg-muted: #8b949e;
+        --accent-fg: #58a6ff;
+        --accent-subtle: rgba(56, 139, 253, 0.14);
+        --success-fg: #3fb950;
+        --success-subtle: rgba(46, 160, 67, 0.14);
+        --success-border: rgba(63, 185, 80, 0.35);
+        --attention-fg: #d29922;
+        --attention-subtle: rgba(187, 128, 9, 0.15);
+        --attention-border: rgba(210, 153, 34, 0.4);
+        --danger-fg: #f85149;
+        --danger-subtle: rgba(248, 81, 73, 0.14);
+        --danger-border: rgba(248, 81, 73, 0.35);
+      }
     }
+
+    :root[data-theme="dark"] {
+      --bg-canvas: #0d1117;
+      --bg-subtle: #161b22;
+      --bg-inset: #21262d;
+      --border-default: #30363d;
+      --border-muted: #21262d;
+      --fg-default: #e6edf3;
+      --fg-muted: #8b949e;
+      --accent-fg: #58a6ff;
+      --accent-subtle: rgba(56, 139, 253, 0.14);
+      --success-fg: #3fb950;
+      --success-subtle: rgba(46, 160, 67, 0.14);
+      --success-border: rgba(63, 185, 80, 0.35);
+      --attention-fg: #d29922;
+      --attention-subtle: rgba(187, 128, 9, 0.15);
+      --attention-border: rgba(210, 153, 34, 0.4);
+      --danger-fg: #f85149;
+      --danger-subtle: rgba(248, 81, 73, 0.14);
+      --danger-border: rgba(248, 81, 73, 0.35);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background-color: var(--bg);
-      color: var(--text-main);
+      background-color: var(--bg-canvas);
+      color: var(--fg-default);
       font-family: var(--font-sans);
-      min-height: 100vh;
-      overflow-x: hidden;
-      background-image: 
-        radial-gradient(circle at 15% 15%, rgba(0, 229, 255, 0.06) 0%, transparent 40%),
-        radial-gradient(circle at 85% 85%, rgba(124, 77, 255, 0.06) 0%, transparent 40%),
-        linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* Header */
-    header {
-      background: rgba(12, 17, 29, 0.85);
-      backdrop-filter: blur(16px);
-      border-bottom: 1px solid var(--border);
+    .topbar {
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-default);
       position: sticky;
       top: 0;
-      z-index: 100;
-      padding: 14px 28px;
+      z-index: 50;
+    }
+
+    .topbar-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 10px 20px;
       display: flex;
+      align-items: center;
       justify-content: space-between;
-      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
     }
 
-    .brand-section {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-
-    .brand-logo {
-      display: flex;
+    .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .brand-link {
+      display: inline-flex;
       align-items: center;
       gap: 8px;
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -0.5px;
-      color: #fff;
+      color: var(--fg-default);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: -0.01em;
     }
 
-    .logo-badge {
-      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
-      color: #000;
-      font-size: 12px;
-      font-weight: 800;
-      padding: 4px 8px;
-      border-radius: 6px;
-    }
+    .divider-slash { color: var(--border-default); font-weight: 300; user-select: none; }
 
-    .target-pill {
-      background: rgba(0, 229, 255, 0.1);
-      border: 1px solid rgba(0, 229, 255, 0.3);
-      padding: 4px 12px;
-      border-radius: 20px;
+    .target-tag {
       font-family: var(--font-mono);
-      font-size: 13px;
-      color: var(--accent-cyan);
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--fg-default);
+      background: var(--bg-inset);
+      border: 1px solid var(--border-default);
+      padding: 2px 8px;
+      border-radius: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
     }
 
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .topbar-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .btn {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      color: var(--text-main);
-      padding: 8px 16px;
-      border-radius: 8px;
-      font-size: 13px;
+      background: var(--bg-canvas);
+      color: var(--fg-default);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      padding: 5px 11px;
+      font-family: var(--font-sans);
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .btn:hover {
-      background: rgba(0, 229, 255, 0.15);
-      border-color: var(--accent-cyan);
-      box-shadow: 0 0 14px var(--accent-cyan-glow);
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, rgba(0, 229, 255, 0.2), rgba(124, 77, 255, 0.2));
-      border: 1px solid rgba(0, 229, 255, 0.5);
-      color: #fff;
-    }
-
-    /* Container */
-    .app-container {
-      max-width: 1440px;
-      margin: 0 auto;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-    }
-
-    /* Alert Banner */
-    .root-cause-banner {
-      background: linear-gradient(90deg, rgba(255, 214, 0, 0.12), rgba(255, 23, 68, 0.08));
-      border: 1px solid rgba(255, 214, 0, 0.4);
-      border-radius: 12px;
-      padding: 16px 22px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-      animation: pulseGlow 3s infinite alternate;
-    }
-
-    @keyframes pulseGlow {
-      0% { border-color: rgba(255, 214, 0, 0.3); box-shadow: 0 0 10px rgba(255, 214, 0, 0.1); }
-      100% { border-color: rgba(255, 214, 0, 0.6); box-shadow: 0 0 20px rgba(255, 214, 0, 0.25); }
-    }
-
-    .rc-title {
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: 700;
-      color: var(--status-amber);
-      margin-bottom: 4px;
-    }
-
-    .rc-detail {
-      font-family: var(--font-mono);
-      font-size: 14px;
-      color: #fff;
-    }
-
-    /* Environment Overview Cards */
-    .environments-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-    }
-
-    .env-card {
-      background: var(--bg-panel);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 18px 22px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .env-card.working {
-      border-top: 3px solid var(--status-green);
-    }
-
-    .env-card.failing {
-      border-top: 3px solid var(--status-red);
-    }
-
-    .env-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 12px;
-    }
-
-    .env-label {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.8px;
-    }
-
-    .working .env-label { color: var(--status-green); }
-    .failing .env-label { color: var(--status-red); }
-
-    .env-hostname {
-      font-size: 18px;
-      font-weight: 700;
-      color: #fff;
-      font-family: var(--font-mono);
-    }
-
-    .status-badge {
-      font-size: 12px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 20px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      text-decoration: none;
+      transition: background-color 0.12s ease, border-color 0.12s ease;
     }
 
-    .status-badge.success {
-      background: var(--status-green-glow);
-      color: var(--status-green);
-      border: 1px solid rgba(0, 230, 118, 0.4);
-    }
+    .btn:hover { background: var(--bg-inset); }
+    .btn-primary { background: var(--accent-fg); border-color: transparent; color: #ffffff; }
+    .btn-primary:hover { opacity: 0.92; background: var(--accent-fg); }
+    .btn-icon { padding: 5px 8px; color: var(--fg-muted); }
+    .btn-icon:hover { color: var(--fg-default); }
 
-    .status-badge.failure {
-      background: var(--status-red-glow);
-      color: var(--status-red);
-      border: 1px solid rgba(255, 23, 68, 0.4);
-    }
+    .nav-bar { background: var(--bg-subtle); border-bottom: 1px solid var(--border-default); }
+    .nav-tabs { max-width: 1080px; margin: 0 auto; padding: 0 20px; display: flex; gap: 8px; overflow-x: auto; }
 
-    .env-specs {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
-      font-size: 12px;
-    }
-
-    .spec-item .spec-label {
-      color: var(--text-muted);
-      margin-bottom: 2px;
-    }
-
-    .spec-item .spec-val {
-      font-family: var(--font-mono);
+    .nav-tab {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--fg-muted);
+      font-family: var(--font-sans);
+      font-size: 13px;
       font-weight: 500;
-      color: #fff;
-    }
-
-    /* Main Workspace Layout */
-    .workspace-grid {
-      display: grid;
-      grid-template-columns: 2fr 1fr;
-      gap: 24px;
-    }
-
-    /* DAG Tree Container */
-    .dag-section {
-      background: var(--bg-panel);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 24px;
-    }
-
-    .section-title {
-      font-size: 16px;
-      font-weight: 700;
-      color: #fff;
-      margin-bottom: 20px;
-      display: flex;
+      padding: 10px 10px;
+      cursor: pointer;
+      display: inline-flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
+      white-space: nowrap;
     }
 
-    .dag-flow {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      position: relative;
-    }
+    .nav-tab:hover { color: var(--fg-default); }
+    .nav-tab.active { color: var(--fg-default); font-weight: 600; border-bottom-color: var(--accent-fg); }
 
-    .dag-tier {
-      display: grid;
-      grid-template-columns: 1fr 140px 1fr;
-      gap: 16px;
-      align-items: center;
-      position: relative;
-    }
-
-    .dag-connector {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-    }
-
-    .stage-pill {
-      background: rgba(24, 34, 56, 0.95);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 6px 10px;
+    .counter-pill {
+      background: var(--bg-inset);
+      color: var(--fg-muted);
       font-size: 11px;
       font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      width: 100%;
-      text-align: center;
-      z-index: 2;
-    }
-
-    .tier-divergent .stage-pill {
-      border-color: var(--status-amber);
-      color: var(--status-amber);
-      background: rgba(255, 214, 0, 0.08);
-      box-shadow: 0 0 10px var(--status-amber-glow);
-    }
-
-    .tier-earliest .stage-pill {
-      border-color: #ff3d00;
-      color: #ff3d00;
-      background: rgba(255, 61, 0, 0.12);
-      box-shadow: 0 0 14px rgba(255, 61, 0, 0.3);
-    }
-
-    .dag-node {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+      padding: 1px 6px;
       border-radius: 10px;
-      padding: 12px 16px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      position: relative;
     }
 
-    .dag-node:hover {
-      border-color: var(--accent-cyan);
-      background: rgba(30, 44, 72, 0.9);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-      transform: translateY(-1px);
+    .main-container { max-width: 1080px; margin: 0 auto; padding: 24px 20px 48px; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    .overview-stack { display: flex; flex-direction: column; gap: 16px; max-width: 820px; }
+
+    .outcome-strip {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-lg);
+      background: var(--bg-canvas);
+      overflow: hidden;
     }
 
-    .dag-node.selected {
-      border-color: var(--accent-cyan);
-      box-shadow: 0 0 16px var(--accent-cyan-glow);
-      background: rgba(30, 48, 80, 0.95);
-    }
+    .outcome-col { padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+    .outcome-col + .outcome-col { border-left: 1px solid var(--border-default); }
+    .outcome-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .env-tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+    .outcome-host { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--fg-default); }
+    .outcome-meta { font-family: var(--font-mono); font-size: 12px; color: var(--fg-muted); }
 
-    .node-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 6px;
-    }
-
-    .node-state {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-
-    .state-same {
-      background: var(--status-green-glow);
-      color: var(--status-green);
-    }
-
-    .state-diff {
-      background: var(--status-amber-glow);
-      color: var(--status-amber);
-    }
-
-    .state-fail {
-      background: var(--status-red-glow);
-      color: var(--status-red);
-    }
-
-    .node-val {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      color: #fff;
-      word-break: break-all;
-    }
-
-    .tier-divergent .dag-node.failing-node {
-      border-color: rgba(255, 214, 0, 0.5);
-    }
-
-    .tier-divergent .dag-node.working-node {
-      border-color: rgba(0, 230, 118, 0.5);
-    }
-
-    .tier-earliest .dag-node {
-      border-width: 2px;
-      border-color: var(--status-amber);
-    }
-
-    /* Details & Side Panel */
-    .sidebar-section {
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    .inspector-panel {
-      background: var(--bg-panel);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px;
-    }
-
-    .inspector-meta {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-top: 14px;
-    }
-
-    .meta-box {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 14px;
-    }
-
-    .meta-box-label {
+    .status-pill {
       font-size: 11px;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 4px;
-    }
-
-    .meta-box-val {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      color: #fff;
-    }
-
-    .hypotheses-panel {
-      background: var(--bg-panel);
-      backdrop-filter: blur(12px);
-      border: 1px solid var(--border);
+      font-weight: 600;
+      padding: 2px 8px;
       border-radius: 12px;
-      padding: 20px;
-    }
-
-    .hypothesis-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 14px;
-      margin-bottom: 12px;
-    }
-
-    .hyp-header {
-      display: flex;
-      justify-content: space-between;
+      display: inline-flex;
       align-items: center;
-      margin-bottom: 6px;
+      gap: 5px;
+      border: 1px solid transparent;
     }
 
-    .hyp-title {
-      font-size: 13px;
-      font-weight: 600;
-      color: #fff;
-    }
+    .status-pill.success { color: var(--success-fg); background: var(--success-subtle); border-color: var(--success-border); }
+    .status-pill.attention { color: var(--attention-fg); background: var(--attention-subtle); border-color: var(--attention-border); }
+    .status-pill.danger { color: var(--danger-fg); background: var(--danger-subtle); border-color: var(--danger-border); }
+    .status-pill.neutral { color: var(--fg-muted); background: var(--bg-inset); border-color: var(--border-default); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; display: inline-block; }
 
-    .hyp-badge {
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 4px;
-      text-transform: uppercase;
-    }
-
-    .badge-strong { background: rgba(0, 230, 118, 0.2); color: var(--status-green); }
-    .badge-moderate { background: rgba(255, 214, 0, 0.2); color: var(--status-amber); }
-    .badge-weak { background: rgba(136, 153, 184, 0.2); color: var(--text-muted); }
-
-    .hyp-rationale {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.5;
-    }
-
-    /* Probe Recommendation Card */
-    .probe-card {
-      background: linear-gradient(135deg, rgba(0, 229, 255, 0.1), rgba(124, 77, 255, 0.1));
-      border: 1px solid rgba(0, 229, 255, 0.35);
-      border-radius: 8px;
-      padding: 14px;
-      margin-top: 14px;
-    }
-
-    .probe-action {
-      font-family: var(--font-mono);
-      font-size: 13px;
-      color: var(--accent-cyan);
-      font-weight: 600;
-      margin-bottom: 6px;
-    }
-
-    .probe-reason {
-      font-size: 12px;
-      color: var(--text-muted);
-      line-height: 1.5;
-      margin-bottom: 10px;
-    }
-
-    .probe-cmd {
-      background: #000;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 6px;
-      padding: 8px 12px;
-      font-family: var(--font-mono);
-      font-size: 12px;
-      color: #00e676;
+    .card { background: var(--bg-canvas); border: 1px solid var(--border-default); border-radius: var(--radius-lg); overflow: hidden; }
+    .card-header {
+      background: var(--bg-subtle);
+      border-bottom: 1px solid var(--border-default);
+      padding: 10px 16px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .card-title { font-size: 12px; font-weight: 600; color: var(--fg-default); text-transform: uppercase; letter-spacing: 0.03em; }
+    .card-body { padding: 16px; }
+    .rc-headline { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--fg-default); margin-bottom: 8px; }
+    .rc-summary { font-size: 13.5px; color: var(--fg-muted); line-height: 1.55; }
+    .card-footer {
+      border-top: 1px solid var(--border-muted);
+      padding: 10px 16px;
+      background: var(--bg-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .text-link { background: none; border: none; color: var(--accent-fg); font-family: var(--font-sans); font-size: 12.5px; font-weight: 500; cursor: pointer; padding: 0; }
+    .text-link:hover { text-decoration: underline; }
+
+    .code-row {
+      background: var(--bg-subtle);
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      color: var(--fg-default);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      overflow-x: auto;
+    }
+    .code-row code { font-family: var(--font-mono); white-space: pre-wrap; word-break: break-all; }
+    .verify-note { margin-top: 10px; font-size: 12px; color: var(--fg-muted); }
+    .verify-note code { font-family: var(--font-mono); color: var(--fg-default); background: var(--bg-inset); padding: 2px 5px; border-radius: 4px; }
+
+    .diff-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 12px; flex-wrap: wrap; }
+    .segmented { display: inline-flex; background: var(--bg-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md); padding: 2px; }
+    .seg-btn { background: transparent; border: none; color: var(--fg-muted); font-family: var(--font-sans); font-size: 12px; font-weight: 500; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+    .seg-btn.active { background: var(--bg-canvas); color: var(--fg-default); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06); }
+
+    .explorer-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 16px; align-items: start; }
+    .layer-list { border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--bg-canvas); overflow: hidden; }
+    .layer-row {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-muted);
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .layer-row:last-child { border-bottom: none; }
+    .layer-row:hover { background: var(--bg-subtle); }
+    .layer-row.selected { background: var(--accent-subtle); box-shadow: inset 3px 0 0 var(--accent-fg); }
+    .layer-row.is-earliest { box-shadow: inset 3px 0 0 var(--attention-fg); }
+    .layer-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .layer-name { font-size: 13px; font-weight: 600; color: var(--fg-default); }
+    .layer-preview { font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .inspector-box { border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--bg-canvas); position: sticky; top: 112px; }
+    .kv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0; }
+    .kv-item { background: var(--bg-subtle); border: 1px solid var(--border-muted); border-radius: var(--radius-md); padding: 8px 10px; }
+    .kv-label { font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 3px; }
+    .kv-val { font-family: var(--font-mono); font-size: 12px; color: var(--fg-default); word-break: break-word; }
+
+    .rationale-box {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: var(--attention-subtle);
+      border: 1px solid var(--attention-border);
+      border-radius: var(--radius-md);
+      font-size: 12.5px;
+      color: var(--fg-default);
     }
 
-    .probe-cmd:hover {
-      border-color: rgba(0, 230, 118, 0.5);
+    .telemetry-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      border: 1px solid var(--border-default);
+      border-radius: var(--radius-md);
     }
+    .telemetry-table th, .telemetry-table td { padding: 6px 8px; text-align: left; border-bottom: 1px solid var(--border-muted); }
+    .telemetry-table th { background: var(--bg-subtle); color: var(--fg-muted); font-weight: 600; font-family: var(--font-sans); font-size: 11px; }
 
-    /* Modal / Tooltips */
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      background: rgba(0, 230, 118, 0.9);
-      color: #000;
-      padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 13px;
-      display: none;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-      z-index: 1000;
+    .reasoning-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
+    .hyp-item { padding: 12px 0; border-bottom: 1px solid var(--border-muted); }
+    .hyp-item:first-child { padding-top: 0; }
+    .hyp-item:last-child { border-bottom: none; padding-bottom: 0; }
+    .hyp-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .hyp-title { font-size: 13.5px; font-weight: 600; color: var(--fg-default); }
+    .hyp-desc { font-size: 12.5px; color: var(--fg-muted); }
+
+    .drop-overlay { position: fixed; inset: 0; background: rgba(13, 17, 23, 0.72); z-index: 200; display: none; align-items: center; justify-content: center; padding: 20px; }
+    .drop-overlay.active { display: flex; }
+    .drop-card { background: var(--bg-canvas); border: 2px dashed var(--accent-fg); border-radius: var(--radius-lg); padding: 36px 48px; text-align: center; max-width: 440px; }
+
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 150; display: none; align-items: center; justify-content: center; padding: 16px; }
+    .modal-backdrop.active { display: flex; }
+    .modal-card { background: var(--bg-canvas); border: 1px solid var(--border-default); border-radius: var(--radius-lg); width: 100%; max-width: 440px; overflow: hidden; }
+    .field-group { margin-bottom: 14px; }
+    .field-group label { display: block; font-size: 12px; font-weight: 600; color: var(--fg-default); margin-bottom: 6px; }
+    .field-group input[type="file"] { width: 100%; padding: 8px; font-size: 12px; border: 1px solid var(--border-default); border-radius: var(--radius-md); background: var(--bg-subtle); color: var(--fg-default); }
+
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--fg-default); color: var(--bg-canvas); padding: 8px 14px; border-radius: var(--radius-md); font-size: 12px; font-weight: 500; z-index: 300; display: none; }
+
+    @media (max-width: 820px) {
+      .outcome-strip, .explorer-grid, .reasoning-grid { grid-template-columns: 1fr; }
+      .outcome-col + .outcome-col { border-left: none; border-top: 1px solid var(--border-default); }
+      .inspector-box { position: static; }
     }
   </style>
 </head>
 <body>
 
-  <header>
-    <div class="brand-section">
-      <div class="brand-logo">
-        <span class="logo-badge">NETDIFF</span>
-        <span>Target Analyzer</span>
+  <div id="drop-overlay" class="drop-overlay">
+    <div class="drop-card">
+      <div style="font-size: 16px; font-weight: 600; margin-bottom: 6px;">Drop two .ndiff snapshots</div>
+      <div style="font-size: 13px; color: var(--fg-muted);">Runs differential analysis directly in your browser.</div>
+    </div>
+  </div>
+
+  <div id="upload-modal" class="modal-backdrop">
+    <div class="modal-card">
+      <div class="card-header">
+        <span class="card-title">Compare Custom Snapshots</span>
+        <button class="btn btn-icon" onclick="closeUploadModal()" aria-label="Close">✕</button>
       </div>
-      <div id="target-badge" class="target-pill">
-        <span>Target:</span> <strong id="header-target">loading...</strong>
+      <div class="card-body">
+        <div class="field-group">
+          <label for="file-working">Working snapshot (.ndiff)</label>
+          <input type="file" id="file-working" accept=".ndiff,.json">
+        </div>
+        <div class="field-group" style="margin-bottom: 0;">
+          <label for="file-failing">Failing snapshot (.ndiff)</label>
+          <input type="file" id="file-failing" accept=".ndiff,.json">
+        </div>
+      </div>
+      <div class="card-footer" style="justify-content: flex-end;">
+        <button class="btn" onclick="closeUploadModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="processUploadedFiles()">Compare</button>
       </div>
     </div>
-    <div class="header-actions">
-      <button id="btn-export-md" class="btn btn-primary" onclick="downloadReport()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Export Report (.md)
-      </button>
-      <button id="btn-view-json" class="btn" onclick="openRawJSON()">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-        View JSON
-      </button>
+  </div>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <span class="brand-link">
+          <svg width="20" height="20" viewBox="0 0 512 512" aria-hidden="true">
+            <rect x="24" y="24" width="464" height="464" rx="96" fill="#161b22" stroke="#30363d" stroke-width="18"/>
+            <circle cx="136" cy="256" r="28" fill="#58a6ff"/>
+            <path d="M 164 256 L 236 256" stroke="#8b949e" stroke-width="24" stroke-linecap="round"/>
+            <path d="M 236 256 C 280 256, 300 184, 360 184" fill="none" stroke="#3fb950" stroke-width="24" stroke-linecap="round"/>
+            <path d="M 236 256 C 280 256, 300 328, 360 328" fill="none" stroke="#f85149" stroke-width="24" stroke-linecap="round"/>
+          </svg>
+          <span>NetDiff</span>
+        </span>
+        <span class="divider-slash">/</span>
+        <span id="header-target" class="target-tag">loading...</span>
+      </div>
+
+      <div class="topbar-controls">
+        <button class="btn" onclick="openUploadModal()">Compare .ndiff</button>
+        <button id="theme-toggle" class="btn btn-icon" onclick="toggleTheme()" title="Toggle light/dark theme" aria-label="Toggle color theme">Theme</button>
+        <button class="btn" onclick="downloadReport()">Download .md</button>
+      </div>
     </div>
+
+    <nav class="nav-bar" aria-label="Workspace sections">
+      <div class="nav-tabs">
+        <button class="nav-tab active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
+        <button class="nav-tab" data-tab="diff" onclick="switchTab('diff')">
+          Path Diff <span id="diff-count-badge" class="counter-pill">0</span>
+        </button>
+        <button class="nav-tab" data-tab="reasoning" onclick="switchTab('reasoning')">Reasoning &amp; Export</button>
+      </div>
+    </nav>
   </header>
 
-  <main class="app-container">
-
-    <!-- Earliest Divergence Banner -->
-    <section id="banner-root-cause" class="root-cause-banner">
-      <div>
-        <div class="rc-title">Earliest Path Divergence (Root Cause)</div>
-        <div id="rc-text" class="rc-detail">Analyzing dependency paths...</div>
-      </div>
-      <div class="status-badge failure" id="rc-status-pill">Divergent Node</div>
-    </section>
-
-    <!-- Side-by-Side Host Overview Cards -->
-    <section class="environments-grid">
-      <div class="env-card working" id="card-working">
-        <div class="env-header">
-          <div>
-            <div class="env-label">Working Environment</div>
-            <div id="working-host" class="env-hostname">host-working</div>
+  <main class="main-container">
+    <section id="tab-overview" class="tab-pane active">
+      <div class="overview-stack">
+        <div class="outcome-strip">
+          <div class="outcome-col">
+            <div class="outcome-top">
+              <span class="env-tag">Working Environment</span>
+              <span id="working-tcp-badge" class="status-pill success"><span class="dot"></span>Connected</span>
+            </div>
+            <div id="working-host" class="outcome-host">-</div>
+            <div id="working-meta" class="outcome-meta">-</div>
           </div>
-          <div id="working-tcp-badge" class="status-badge success">✓ Connected</div>
-        </div>
-        <div class="env-specs">
-          <div class="spec-item">
-            <div class="spec-label">Route Egress</div>
-            <div id="working-iface" class="spec-val">-</div>
-          </div>
-          <div class="spec-item">
-            <div class="spec-label">Source IP</div>
-            <div id="working-source" class="spec-val">-</div>
-          </div>
-          <div class="spec-item">
-            <div class="spec-label">Routing Table</div>
-            <div id="working-table" class="spec-val">-</div>
+          <div class="outcome-col">
+            <div class="outcome-top">
+              <span class="env-tag">Failing Environment</span>
+              <span id="failing-tcp-badge" class="status-pill danger"><span class="dot"></span>Timeout</span>
+            </div>
+            <div id="failing-host" class="outcome-host">-</div>
+            <div id="failing-meta" class="outcome-meta">-</div>
           </div>
         </div>
-      </div>
 
-      <div class="env-card failing" id="card-failing">
-        <div class="env-header">
-          <div>
-            <div class="env-label">Failing Environment</div>
-            <div id="failing-host" class="env-hostname">host-failing</div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Earliest Divergence (Root Cause)</span>
+            <span id="rc-status-pill" class="status-pill attention">Isolated</span>
           </div>
-          <div id="failing-tcp-badge" class="status-badge failure">✗ Timeout</div>
+          <div class="card-body">
+            <div id="rc-text" class="rc-headline">Analyzing snapshots...</div>
+            <p id="rc-summary" class="rc-summary">Loading differential summary...</p>
+          </div>
+          <div class="card-footer">
+            <span style="font-size: 12px; color: var(--fg-muted);">Downstream socket failures are cascade symptoms.</span>
+            <button class="text-link" onclick="switchTab('diff')">Inspect layer diff &rarr;</button>
+          </div>
         </div>
-        <div class="env-specs">
-          <div class="spec-item">
-            <div class="spec-label">Route Egress</div>
-            <div id="failing-iface" class="spec-val">-</div>
+
+        <div class="card" id="overview-remediation-card">
+          <div class="card-header">
+            <span class="card-title">Recommended Remediation</span>
+            <span class="status-pill success">Verified Fix</span>
           </div>
-          <div class="spec-item">
-            <div class="spec-label">Source IP</div>
-            <div id="failing-source" class="spec-val">-</div>
+          <div class="card-body">
+            <div class="code-row">
+              <code id="rem-cmd-text">$ sudo ...</code>
+              <button class="btn" onclick="copyRemCmd()">Copy</button>
+            </div>
+            <div id="rem-verify-container" class="verify-note">
+              Verify: <code id="rem-verify-cmd">ip ...</code>
+            </div>
+            <p id="rem-explanation" style="margin-top: 8px; font-size: 12.5px; color: var(--fg-muted);"></p>
           </div>
-          <div class="spec-item">
-            <div class="spec-label">Routing Table</div>
-            <div id="failing-table" class="spec-val">-</div>
+          <div class="card-footer">
+            <span style="font-size: 12px; color: var(--fg-muted);">Or run safely with automatic rollback via <code>netdiff fix --apply</code></span>
+            <button class="text-link" onclick="switchTab('reasoning')">Hypotheses &amp; probes &rarr;</button>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Workspace: Dual Flow Tree + Inspector -->
-    <div class="workspace-grid">
-      <!-- DAG Flow Column -->
-      <section class="dag-section">
-        <div class="section-title">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Dual Dependency Path Visualizer
+    <section id="tab-diff" class="tab-pane">
+      <div class="diff-toolbar">
+        <div class="segmented" role="group" aria-label="Filter network layers">
+          <button id="filter-diff-btn" class="seg-btn active" onclick="setLayerFilter('diff')">Differences only</button>
+          <button id="filter-all-btn" class="seg-btn" onclick="setLayerFilter('all')">All layers</button>
         </div>
-        <div id="dag-container" class="dag-flow">
-          <!-- Populated dynamically via JavaScript -->
+        <span style="font-size: 12px; color: var(--fg-muted);">Select any stage to inspect attributes and socket counters.</span>
+      </div>
+
+      <div class="explorer-grid">
+        <div id="dag-container" class="layer-list"></div>
+
+        <aside class="inspector-box">
+          <div class="card-header">
+            <span class="card-title">Stage Inspector</span>
+          </div>
+          <div id="inspector-content" class="card-body">
+            <p style="font-size: 13px; color: var(--fg-muted);">Select a layer row on the left to inspect its details.</p>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-reasoning" class="tab-pane">
+      <div class="reasoning-grid">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Diagnostic Hypotheses</span>
+          </div>
+          <div id="hypotheses-list" class="card-body"></div>
         </div>
-      </section>
 
-      <!-- Sidebar: Inspector + AI Hypotheses -->
-      <aside class="sidebar-section">
-        <!-- Node Inspector -->
-        <div class="inspector-panel" id="inspector">
-          <div class="section-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-purple)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            Component Inspector
-          </div>
-          <div id="inspector-content">
-            <p style="color: var(--text-muted); font-size: 13px;">Click any stage node in the dependency graph to inspect path attributes and causal relevance.</p>
-          </div>
-        </div>
-
-        <!-- Diagnostic Hypotheses & Probe -->
-        <div class="hypotheses-panel">
-          <div class="section-title">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--status-amber)" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-            Diagnostic Reasoning & Follow-up
-          </div>
-          <div id="hypotheses-list">
-            <!-- Hypotheses list populated via JS -->
-          </div>
-
-          <div id="probe-recommendation" class="probe-card" style="display: none;">
-            <div style="font-size: 11px; text-transform: uppercase; color: var(--accent-cyan); font-weight: 700; margin-bottom: 4px;">Recommended Validation Probe</div>
-            <div id="probe-action" class="probe-action">TEST_TCP_BIND_INTERFACE</div>
-            <div id="probe-reason" class="probe-reason">Reasoning...</div>
-            <div id="probe-cmd" class="probe-cmd" onclick="copyProbeCmd()" title="Click to copy command">
-              <span id="probe-cmd-text">netdiff probe ...</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="card" id="probe-recommendation" style="display: none;">
+            <div class="card-header">
+              <span class="card-title">Validation Probe</span>
+            </div>
+            <div class="card-body">
+              <div id="probe-action" style="font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; margin-bottom: 4px;">-</div>
+              <p id="probe-reason" style="font-size: 12.5px; color: var(--fg-muted); margin-bottom: 10px;"></p>
+              <div class="code-row">
+                <code id="probe-cmd-text">netdiff probe ...</code>
+                <button class="btn" onclick="copyProbeCmd()">Copy</button>
+              </div>
             </div>
           </div>
 
-          <div id="remediation-recommendation" class="probe-card" style="display: none; border-color: rgba(0, 230, 118, 0.4); background: rgba(0, 230, 118, 0.05); margin-top: 14px;">
-            <div style="font-size: 11px; text-transform: uppercase; color: var(--status-green); font-weight: 700; margin-bottom: 4px;">Actionable Remediation</div>
-            <div id="rem-explanation" style="font-size: 12px; color: var(--text-main); margin-bottom: 8px;">Explanation...</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 600;">Immediate Bash Fix:</div>
-            <div id="rem-cmd" class="probe-cmd" onclick="copyRemCmd()" title="Click to copy fix" style="background: rgba(0,0,0,0.4); border-color: rgba(0, 230, 118, 0.3);">
-              <span id="rem-cmd-text" style="color: var(--status-green);">sudo ...</span>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <div class="card">
+            <div class="card-header">
+              <span class="card-title">Export Incident Data</span>
             </div>
-            <div id="rem-verify-container" style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">
-              <span>Verify: </span><code id="rem-verify-cmd" style="color: var(--accent-cyan); font-family: var(--font-mono);">ip ...</code>
+            <div class="card-body" style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn" onclick="downloadReport()">Download Markdown (.md)</button>
+              <button class="btn" onclick="openRawJSON()">View Raw JSON</button>
             </div>
           </div>
         </div>
-      </aside>
-    </div>
-
+      </div>
+    </section>
   </main>
 
-  <div id="toast" class="toast">Copied probe command to clipboard!</div>
+  <div id="toast" class="toast">Copied to clipboard</div>
 
   <script>
     let appData = null;
+    let allTiers = [];
+    let layerFilter = 'diff';
+    let selectedTierId = null;
+
+    function getSavedTheme() {
+      try { return localStorage.getItem('netdiff-theme'); } catch (_) { return null; }
+    }
+    function saveTheme(val) {
+      try { localStorage.setItem('netdiff-theme', val); } catch (_) {}
+    }
+    function applyTheme(theme) {
+      if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-theme', theme);
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+      }
+      updateThemeLabel();
+    }
+    function updateThemeLabel() {
+      const btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      const explicit = document.documentElement.getAttribute('data-theme');
+      const isDark = explicit ? explicit === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      btn.textContent = isDark ? 'Light' : 'Dark';
+    }
+    function toggleTheme() {
+      const explicit = document.documentElement.getAttribute('data-theme');
+      const isDark = explicit ? explicit === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const next = isDark ? 'light' : 'dark';
+      applyTheme(next);
+      saveTheme(next);
+    }
+
+    function switchTab(tabName) {
+      document.querySelectorAll('.nav-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.tab-pane').forEach(pane => {
+        pane.classList.toggle('active', pane.id === 'tab-' + tabName);
+      });
+    }
+
+    function setLayerFilter(mode) {
+      layerFilter = mode;
+      document.getElementById('filter-diff-btn').classList.toggle('active', mode === 'diff');
+      document.getElementById('filter-all-btn').classList.toggle('active', mode === 'all');
+      renderLayerList();
+    }
 
     async function loadData() {
+      const saved = getSavedTheme();
+      if (saved) applyTheme(saved);
+      else updateThemeLabel();
+
       if (window.__NETDIFF_DATA__) {
         appData = window.__NETDIFF_DATA__;
         renderDashboard(appData);
@@ -729,478 +607,257 @@
       }
       try {
         const res = await fetch('/api/data');
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
         appData = await res.json();
         renderDashboard(appData);
       } catch (err) {
-        console.error("Failed to load data:", err);
-        document.getElementById('rc-text').textContent = "Error loading comparison data: " + err.message;
+        document.getElementById('rc-text').textContent = 'Unable to load comparison data.';
+        document.getElementById('rc-summary').textContent = err.message;
       }
     }
 
     function renderDashboard(data) {
+      if (!data || !data.comparison) return;
       const comp = data.comparison;
-      const exp = data.explanation;
+      const exp = data.explanation || {};
 
-      // Header target
       document.getElementById('header-target').textContent = comp.target.raw;
+      document.getElementById('working-host').textContent = comp.working_host || 'working-host';
+      document.getElementById('failing-host').textContent = comp.failing_host || 'failing-host';
 
-      // Root Cause Banner
-      if (comp.earliest_divergence) {
-        document.getElementById('rc-text').textContent = comp.earliest_divergence;
-      } else {
-        document.getElementById('rc-text').textContent = "No upstream path divergence detected.";
-        document.getElementById('rc-status-pill').textContent = "Identical Path";
-        document.getElementById('rc-status-pill').className = "status-badge success";
-      }
+      const wSnap = comp.working_snapshot || {};
+      const fSnap = comp.failing_snapshot || {};
 
-      // Environment Cards
-      document.getElementById('working-host').textContent = comp.working_host;
-      document.getElementById('failing-host').textContent = comp.failing_host;
+      document.getElementById('working-meta').textContent = wSnap.route
+        ? `${wSnap.route.egress_interface || '-'} · ${wSnap.route.table_name || ('table ' + wSnap.route.table)} · ${wSnap.route.preferred_source || 'auto'}`
+        : '-';
+      document.getElementById('failing-meta').textContent = fSnap.route
+        ? `${fSnap.route.egress_interface || '-'} · ${fSnap.route.table_name || ('table ' + fSnap.route.table)} · ${fSnap.route.preferred_source || 'auto'}`
+        : '-';
 
-      const wSnap = comp.working_snapshot;
-      const fSnap = comp.failing_snapshot;
-
-      if (wSnap.route) {
-        document.getElementById('working-iface').textContent = wSnap.route.egress_interface || "-";
-        document.getElementById('working-source').textContent = wSnap.route.preferred_source || "-";
-        document.getElementById('working-table').textContent = wSnap.route.table_name || ("table " + wSnap.route.table);
-      }
       if (wSnap.tcp) {
-        document.getElementById('working-tcp-badge').textContent = `✓ ${wSnap.tcp.status} (${wSnap.tcp.latency_ms}ms)`;
-      }
-
-      if (fSnap.route) {
-        document.getElementById('failing-iface').textContent = fSnap.route.egress_interface || "-";
-        document.getElementById('failing-source').textContent = fSnap.route.preferred_source || "-";
-        document.getElementById('failing-table').textContent = fSnap.route.table_name || ("table " + fSnap.route.table);
+        document.getElementById('working-tcp-badge').innerHTML = `<span class="dot"></span>${escapeHtml(wSnap.tcp.status)} (${wSnap.tcp.latency_ms || 0}ms)`;
       }
       if (fSnap.tcp) {
-        document.getElementById('failing-tcp-badge').textContent = `✗ ${fSnap.tcp.status}`;
+        document.getElementById('failing-tcp-badge').innerHTML = `<span class="dot"></span>${escapeHtml(fSnap.tcp.status)}`;
       }
 
-      // Render DAG Nodes
-      renderDAG(comp);
+      if (comp.earliest_divergence) {
+        document.getElementById('rc-text').textContent = comp.earliest_divergence;
+        document.getElementById('rc-status-pill').textContent = 'Divergent';
+        document.getElementById('rc-status-pill').className = 'status-pill attention';
+      } else {
+        document.getElementById('rc-text').textContent = 'No upstream path divergence detected.';
+        document.getElementById('rc-status-pill').textContent = 'Identical';
+        document.getElementById('rc-status-pill').className = 'status-pill success';
+      }
 
-      // Render Hypotheses & Probe
+      document.getElementById('rc-summary').textContent = exp.summary || 'Upstream causal divergence isolated along the dependency chain.';
+
+      buildTiers(comp);
+      renderLayerList();
       renderReasoning(exp, comp.target.raw);
     }
 
-    function renderDAG(comp) {
-      const wSnap = comp.working_snapshot;
-      const fSnap = comp.failing_snapshot;
-      const earliest = comp.earliest_divergence || "";
+    function buildTiers(comp) {
+      const wSnap = comp.working_snapshot || {};
+      const fSnap = comp.failing_snapshot || {};
 
-      const tiers = [
-        {
-          id: "Hostname",
-          label: "Target Host",
-          wVal: comp.target.host,
-          fVal: comp.target.host,
-          same: true,
-          relevance: "IGNORE"
-        },
-        {
-          id: "DNS",
-          label: "DNS Resolution",
-          wVal: formatDNS(wSnap.dns),
-          fVal: formatDNS(fSnap.dns),
-          same: formatDNS(wSnap.dns) === formatDNS(fSnap.dns),
-          relevance: "HIGH"
-        },
-        {
-          id: "Destination IP",
-          label: "Destination IP",
-          wVal: (wSnap.route && wSnap.route.destination_ip) || comp.target.host,
-          fVal: (fSnap.route && fSnap.route.destination_ip) || comp.target.host,
-          same: true,
-          relevance: "HIGH"
-        },
-        {
-          id: "Policy Rule",
-          label: "Policy Routing Rule",
-          wVal: (wSnap.route && wSnap.route.policy_rule) || "default (main)",
-          fVal: (fSnap.route && fSnap.route.policy_rule) || "default (main)",
-          same: ((wSnap.route && wSnap.route.policy_rule) || "") === ((fSnap.route && fSnap.route.policy_rule) || ""),
-          relevance: "HIGH"
-        },
-        {
-          id: "Route Table",
-          label: "Routing Table",
-          wVal: wSnap.route ? `table ${wSnap.route.table} (${wSnap.route.table_name || 'main'})` : "none",
-          fVal: fSnap.route ? `table ${fSnap.route.table} (${fSnap.route.table_name || 'main'})` : "none",
-          same: (wSnap.route && fSnap.route && wSnap.route.table === fSnap.route.table),
-          relevance: "HIGH"
-        },
-        {
-          id: "Route Lookup",
-          label: "Route Lookup",
-          wVal: formatRouteLookup(wSnap.route),
-          fVal: formatRouteLookup(fSnap.route),
-          same: formatRouteLookup(wSnap.route) === formatRouteLookup(fSnap.route),
-          relevance: "HIGH"
-        },
-        {
-          id: "Gateway",
-          label: "Next-Hop Gateway",
-          wVal: (wSnap.route && wSnap.route.gateway) || "direct on-link",
-          fVal: (fSnap.route && fSnap.route.gateway) || "direct on-link",
-          same: ((wSnap.route && wSnap.route.gateway) || "") === ((fSnap.route && fSnap.route.gateway) || ""),
-          relevance: "HIGH"
-        },
-        {
-          id: "Source Address",
-          label: "Source IP Address",
-          wVal: (wSnap.route && wSnap.route.preferred_source) || "auto",
-          fVal: (fSnap.route && fSnap.route.preferred_source) || "auto",
-          same: ((wSnap.route && wSnap.route.preferred_source) || "") === ((fSnap.route && fSnap.route.preferred_source) || ""),
-          relevance: "MEDIUM"
-        },
-        {
-          id: "Egress Interface",
-          label: "Egress Interface",
-          wVal: (wSnap.route && wSnap.route.egress_interface) || "none",
-          fVal: (fSnap.route && fSnap.route.egress_interface) || "none",
-          same: ((wSnap.route && wSnap.route.egress_interface) || "") === ((fSnap.route && fSnap.route.egress_interface) || ""),
-          relevance: "HIGH"
-        },
-        {
-          id: "Neighbor ARP",
-          label: "Neighbor ARP / NDP",
-          wVal: formatNeighbor(wSnap.neighbor),
-          fVal: formatNeighbor(fSnap.neighbor),
-          same: ((wSnap.neighbor && wSnap.neighbor.state) || "") === ((fSnap.neighbor && fSnap.neighbor.state) || "") &&
-                ((wSnap.neighbor && wSnap.neighbor.mac) || "") === ((fSnap.neighbor && fSnap.neighbor.mac) || ""),
-          relevance: "HIGH",
-          neighborData: { w: wSnap.neighbor, f: fSnap.neighbor }
-        },
-        {
-          id: "MTU",
-          label: "Interface MTU",
-          wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} bytes` : "1500 bytes",
-          fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} bytes` : "1500 bytes",
-          same: ((wSnap.interface && wSnap.interface.mtu) || 1500) === ((fSnap.interface && fSnap.interface.mtu) || 1500),
-          relevance: "MEDIUM"
-        },
-        ...( ((wSnap.firewall && wSnap.firewall.active) || (fSnap.firewall && fSnap.firewall.active)) ? [{
-          id: "Firewall",
-          label: "Host Packet Filtering",
-          wVal: (wSnap.firewall && wSnap.firewall.active) ? `active (${wSnap.firewall.backend || 'filter'})` : "inactive",
-          fVal: (fSnap.firewall && fSnap.firewall.active) ? `active (${fSnap.firewall.backend || 'filter'})` : "inactive",
-          same: (wSnap.firewall && fSnap.firewall && wSnap.firewall.active === fSnap.firewall.active),
-          relevance: "HIGH",
-          firewallData: { w: wSnap.firewall, f: fSnap.firewall }
-        }] : [] ),
-        {
-          id: "TCP",
-          label: "TCP Handshake & Telemetry",
-          wVal: formatTCP(wSnap.tcp),
-          fVal: formatTCP(fSnap.tcp),
-          same: (wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status &&
-                (!fSnap.tcp.socket_info || fSnap.tcp.socket_info.total_retrans === 0)),
-          isTCP: true,
-          relevance: "HIGH",
-          tcpData: { w: wSnap.tcp, f: fSnap.tcp }
-        },
-        ...( (wSnap.tls || fSnap.tls || (comp.target && (comp.target.port === 443 || comp.target.protocol === "https" || comp.target.protocol === "tls"))) ? [{
-          id: "TLS Handshake",
-          label: "TLS Handshake & Certs",
-          wVal: formatTLS(wSnap.tls),
-          fVal: formatTLS(fSnap.tls),
-          same: (wSnap.tls && fSnap.tls && wSnap.tls.handshake_success === fSnap.tls.handshake_success),
-          isTLS: true,
-          relevance: "HIGH",
-          tlsData: { w: wSnap.tls, f: fSnap.tls }
-        }] : [] )
+      allTiers = [
+        { id: 'Hostname', label: 'Target Hostname', wVal: comp.target.host, fVal: comp.target.host, same: true, relevance: 'LOW' },
+        { id: 'DNS', label: 'DNS Resolution', wVal: formatDNS(wSnap.dns), fVal: formatDNS(fSnap.dns), same: formatDNS(wSnap.dns) === formatDNS(fSnap.dns), relevance: 'HIGH' },
+        { id: 'Destination IP', label: 'Destination IP', wVal: (wSnap.route && wSnap.route.destination_ip) || comp.target.host, fVal: (fSnap.route && fSnap.route.destination_ip) || comp.target.host, same: ((wSnap.route && wSnap.route.destination_ip) || '') === ((fSnap.route && fSnap.route.destination_ip) || ''), relevance: 'HIGH' },
+        { id: 'Policy Rule', label: 'Policy Routing (ip rule)', wVal: (wSnap.route && wSnap.route.policy_rule) || 'default (main)', fVal: (fSnap.route && fSnap.route.policy_rule) || 'default (main)', same: ((wSnap.route && wSnap.route.policy_rule) || '') === ((fSnap.route && fSnap.route.policy_rule) || ''), relevance: 'HIGH' },
+        { id: 'Route Table', label: 'Routing Table', wVal: wSnap.route ? `table ${wSnap.route.table} (${wSnap.route.table_name || 'main'})` : 'none', fVal: fSnap.route ? `table ${fSnap.route.table} (${fSnap.route.table_name || 'main'})` : 'none', same: Boolean(wSnap.route && fSnap.route && wSnap.route.table === fSnap.route.table), relevance: 'HIGH' },
+        { id: 'Route Lookup', label: 'FIB Route Lookup', wVal: formatRouteLookup(wSnap.route), fVal: formatRouteLookup(fSnap.route), same: formatRouteLookup(wSnap.route) === formatRouteLookup(fSnap.route), relevance: 'HIGH' },
+        { id: 'Gateway', label: 'Next-Hop Gateway', wVal: (wSnap.route && wSnap.route.gateway) || 'direct on-link', fVal: (fSnap.route && fSnap.route.gateway) || 'direct on-link', same: ((wSnap.route && wSnap.route.gateway) || '') === ((fSnap.route && fSnap.route.gateway) || ''), relevance: 'HIGH' },
+        { id: 'Source Address', label: 'Source IP Address', wVal: (wSnap.route && wSnap.route.preferred_source) || 'auto', fVal: (fSnap.route && fSnap.route.preferred_source) || 'auto', same: ((wSnap.route && wSnap.route.preferred_source) || '') === ((fSnap.route && fSnap.route.preferred_source) || ''), relevance: 'MEDIUM' },
+        { id: 'Egress Interface', label: 'Egress Interface', wVal: (wSnap.route && wSnap.route.egress_interface) || 'none', fVal: (fSnap.route && fSnap.route.egress_interface) || 'none', same: ((wSnap.route && wSnap.route.egress_interface) || '') === ((fSnap.route && fSnap.route.egress_interface) || ''), relevance: 'HIGH' },
+        { id: 'Neighbor ARP', label: 'Neighbor ARP / NDP', wVal: formatNeighbor(wSnap.neighbor), fVal: formatNeighbor(fSnap.neighbor), same: ((wSnap.neighbor && wSnap.neighbor.state) || '') === ((fSnap.neighbor && fSnap.neighbor.state) || '') && ((wSnap.neighbor && wSnap.neighbor.mac) || '') === ((fSnap.neighbor && fSnap.neighbor.mac) || ''), relevance: 'HIGH' },
+        { id: 'MTU', label: 'Interface MTU & Link', wVal: (wSnap.interface && wSnap.interface.mtu) ? `${wSnap.interface.mtu} B (${wSnap.interface.oper_state || 'up'})` : '1500 B (up)', fVal: (fSnap.interface && fSnap.interface.mtu) ? `${fSnap.interface.mtu} B (${fSnap.interface.oper_state || 'up'})` : '1500 B (up)', same: ((wSnap.interface && wSnap.interface.mtu) || 1500) === ((fSnap.interface && fSnap.interface.mtu) || 1500) && ((wSnap.interface && wSnap.interface.oper_state) || 'up') === ((fSnap.interface && fSnap.interface.oper_state) || 'up'), relevance: 'HIGH' },
+        ...(((wSnap.firewall && wSnap.firewall.active) || (fSnap.firewall && fSnap.firewall.active)) ? [{
+          id: 'Firewall', label: 'Host Packet Filter', wVal: (wSnap.firewall && wSnap.firewall.active) ? `active (${wSnap.firewall.backend || 'filter'})` : 'inactive', fVal: (fSnap.firewall && fSnap.firewall.active) ? `active (${fSnap.firewall.backend || 'filter'})` : 'inactive', same: Boolean(wSnap.firewall && fSnap.firewall && wSnap.firewall.active === fSnap.firewall.active), relevance: 'HIGH'
+        }] : []),
+        { id: 'TCP', label: 'TCP Connection & Telemetry', wVal: formatTCP(wSnap.tcp), fVal: formatTCP(fSnap.tcp), same: Boolean(wSnap.tcp && fSnap.tcp && wSnap.tcp.status === fSnap.tcp.status && (!fSnap.tcp.socket_info || fSnap.tcp.socket_info.total_retrans === 0)), isTCP: true, relevance: 'HIGH', tcpData: { w: wSnap.tcp, f: fSnap.tcp } },
+        ...((wSnap.tls || fSnap.tls || (comp.target && (comp.target.port === 443 || comp.target.protocol === 'https'))) ? [{
+          id: 'TLS Handshake', label: 'TLS Handshake & Certs', wVal: formatTLS(wSnap.tls), fVal: formatTLS(fSnap.tls), same: Boolean(wSnap.tls && fSnap.tls && wSnap.tls.handshake_success === fSnap.tls.handshake_success), isTLS: true, relevance: 'HIGH', tlsData: { w: wSnap.tls, f: fSnap.tls }
+        }] : [])
       ];
 
-      const container = document.getElementById('dag-container');
-      container.innerHTML = '';
+      const diffCount = allTiers.filter(t => !t.same).length;
+      document.getElementById('diff-count-badge').textContent = String(diffCount);
+    }
 
-      tiers.forEach(tier => {
-        const isEarliest = earliest.includes(tier.id);
-        const isDivergent = !tier.same;
+    function renderLayerList() {
+      const earliest = (appData && appData.comparison && appData.comparison.earliest_divergence) || '';
+      const visible = layerFilter === 'diff' ? allTiers.filter(t => !t.same) : allTiers;
+      const listEl = document.getElementById('dag-container');
+      listEl.innerHTML = '';
 
-        let tierClass = "dag-tier";
-        if (isEarliest) tierClass += " tier-earliest";
-        else if (isDivergent) tierClass += " tier-divergent";
+      if (visible.length === 0) {
+        listEl.innerHTML = '<div style="padding: 20px; font-size: 13px; color: var(--fg-muted);">No layer differences found. Switch to "All layers" to inspect full stack.</div>';
+        return;
+      }
 
+      visible.forEach(tier => {
+        const isEarliest = earliest.toLowerCase().includes(tier.id.toLowerCase());
         const row = document.createElement('div');
-        row.className = tierClass;
+        row.className = 'layer-row' + (isEarliest ? ' is-earliest' : '') + (selectedTierId === tier.id ? ' selected' : '');
+        row.onclick = () => selectNode(tier);
 
-        // Working Node
-        const wNode = document.createElement('div');
-        wNode.className = "dag-node working-node";
-        wNode.innerHTML = `
-          <div class="node-header">
-            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">WORKING</span>
-            <span class="node-state ${tier.same ? 'state-same' : 'state-diff'}">${tier.same ? '✓ MATCH' : '⚠ DIFFERENT'}</span>
+        let badgeClass = 'neutral';
+        let badgeLabel = 'Match';
+        if (isEarliest) { badgeClass = 'attention'; badgeLabel = 'Root Cause'; }
+        else if (!tier.same && (tier.isTCP || tier.isTLS)) { badgeClass = 'danger'; badgeLabel = 'Failed'; }
+        else if (!tier.same) { badgeClass = 'attention'; badgeLabel = 'Divergent'; }
+
+        row.innerHTML = `
+          <div class="layer-main">
+            <div class="layer-name">${escapeHtml(tier.label)}</div>
+            <div class="layer-preview">${tier.same ? escapeHtml(tier.wVal) : `${escapeHtml(tier.wVal)}  →  ${escapeHtml(tier.fVal)}`}</div>
           </div>
-          <div class="node-val">${escapeHtml(tier.wVal)}</div>
+          <span class="status-pill ${badgeClass}">${badgeLabel}</span>
         `;
-        wNode.onclick = () => selectNode(tier);
-
-        // Center Connector
-        const center = document.createElement('div');
-        center.className = "dag-connector";
-        center.innerHTML = `
-          <div class="stage-pill" title="${tier.label}">${escapeHtml(tier.label)}</div>
-          ${isEarliest ? '<div style="font-size: 9px; font-weight: 800; color: var(--status-amber); margin-top: 3px; letter-spacing: 0.5px;">ROOT CAUSE</div>' : ''}
-        `;
-
-        // Failing Node
-        const fNode = document.createElement('div');
-        fNode.className = "dag-node failing-node";
-        const failStatusClass = (tier.isTCP || tier.isTLS) && !tier.same ? 'state-fail' : (tier.same ? 'state-same' : 'state-diff');
-        const failStatusLabel = (tier.isTCP || tier.isTLS) && !tier.same ? '✗ FAIL' : (tier.same ? '✓ MATCH' : '⚠ DIVERGENT');
-        fNode.innerHTML = `
-          <div class="node-header">
-            <span style="font-size: 11px; color: var(--text-muted); font-weight: 600;">FAILING</span>
-            <span class="node-state ${failStatusClass}">${failStatusLabel}</span>
-          </div>
-          <div class="node-val">${escapeHtml(tier.fVal)}</div>
-        `;
-        fNode.onclick = () => selectNode(tier);
-
-        row.appendChild(wNode);
-        row.appendChild(center);
-        row.appendChild(fNode);
-
-        container.appendChild(row);
+        listEl.appendChild(row);
       });
 
-      // Default select the earliest divergence node or policy rule
-      const initial = tiers.find(t => earliest.includes(t.id)) || tiers[3];
-      selectNode(initial);
+      const current = visible.find(t => t.id === selectedTierId) || visible.find(t => earliest.toLowerCase().includes(t.id.toLowerCase())) || visible[0];
+      if (current) selectNode(current);
     }
 
     function selectNode(tier) {
-      document.querySelectorAll('.dag-node').forEach(el => el.classList.remove('selected'));
+      selectedTierId = tier.id;
+      document.querySelectorAll('.layer-row').forEach(el => {
+        el.classList.toggle('selected', el.querySelector('.layer-name').textContent === tier.label);
+      });
 
       const comp = appData ? appData.comparison : null;
       let matchingDiff = null;
       if (comp && comp.differences) {
-        matchingDiff = comp.differences.find(d => 
-          (d.dependency_node && tier.id.includes(d.dependency_node)) ||
-          (d.category && tier.id.includes(d.category))
+        matchingDiff = comp.differences.find(d =>
+          (d.dependency_node && tier.id.toLowerCase().includes(d.dependency_node.toLowerCase())) ||
+          (d.category && tier.id.toLowerCase().includes(d.category.toLowerCase()))
         );
       }
 
       let extraHTML = '';
       if (matchingDiff && matchingDiff.rationale) {
+        extraHTML += `<div class="rationale-box"><strong>Causal rationale:</strong> ${escapeHtml(matchingDiff.rationale)}</div>`;
+      }
+
+      if (tier.tcpData && ((tier.tcpData.w && tier.tcpData.w.socket_info) || (tier.tcpData.f && tier.tcpData.f.socket_info))) {
+        const wS = (tier.tcpData.w && tier.tcpData.w.socket_info) || null;
+        const fS = (tier.tcpData.f && tier.tcpData.f.socket_info) || null;
         extraHTML += `
-          <div style="margin-top: 14px; padding: 12px; background: rgba(255, 214, 0, 0.08); border-left: 3px solid var(--status-amber); border-radius: 6px; font-size: 13px; line-height: 1.5; color: #fff;">
-            <strong style="color: var(--status-amber);">Causal Rationale:</strong> ${escapeHtml(matchingDiff.rationale)}
-          </div>
+          <table class="telemetry-table">
+            <thead><tr><th>TCP_INFO Metric</th><th>Working</th><th>Failing</th></tr></thead>
+            <tbody>
+              <tr><td>Kernel RTT</td><td>${wS && wS.rtt_us ? (wS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td><td>${fS && fS.rtt_us ? (fS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td></tr>
+              <tr><td>Retransmissions</td><td>${wS ? wS.total_retrans : 0}</td><td>${fS ? fS.total_retrans : 0}</td></tr>
+              <tr><td>Congestion Window</td><td>${wS && wS.snd_cwnd ? wS.snd_cwnd + ' pkts' : '-'}</td><td>${fS && fS.snd_cwnd ? fS.snd_cwnd + ' pkts' : '-'}</td></tr>
+              <tr><td>Path MTU</td><td>${wS && wS.pmtu ? wS.pmtu + ' B' : '-'}</td><td>${fS && fS.pmtu ? fS.pmtu + ' B' : '-'}</td></tr>
+            </tbody>
+          </table>
         `;
       }
 
-      // TCP Socket Telemetry Details
-      if (tier.tcpData) {
-        const wT = tier.tcpData.w;
-        const fT = tier.tcpData.f;
-        const wS = wT ? wT.socket_info : null;
-        const fS = fT ? fT.socket_info : null;
-        if (wS || fS) {
-          extraHTML += `
-            <div style="margin-top: 16px;">
-              <div style="font-size: 12px; font-weight: 700; color: var(--accent-cyan); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">Kernel TCP_INFO Telemetry</div>
-              <table style="width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); background: rgba(12, 17, 29, 0.6); border-radius: 6px; overflow: hidden;">
-                <thead>
-                  <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-muted); font-size: 11px;">
-                    <th style="padding: 6px 10px;">Metric</th>
-                    <th style="padding: 6px 10px;">Working</th>
-                    <th style="padding: 6px 10px;">Failing</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                    <td style="padding: 6px 10px; color: var(--text-muted);">Kernel RTT</td>
-                    <td style="padding: 6px 10px; color: var(--status-green);">${wS && wS.rtt_us ? (wS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td>
-                    <td style="padding: 6px 10px; color: ${fS && fS.rtt_us > (wS ? wS.rtt_us*2 : 50000) ? 'var(--status-amber)' : 'inherit'};">${fS && fS.rtt_us ? (fS.rtt_us/1000).toFixed(2) + ' ms' : '-'}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                    <td style="padding: 6px 10px; color: var(--text-muted);">RTT Variance</td>
-                    <td style="padding: 6px 10px;">${wS && wS.rtt_var_us ? (wS.rtt_var_us/1000).toFixed(2) + ' ms' : '-'}</td>
-                    <td style="padding: 6px 10px;">${fS && fS.rtt_var_us ? (fS.rtt_var_us/1000).toFixed(2) + ' ms' : '-'}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                    <td style="padding: 6px 10px; color: var(--text-muted);">Retransmissions</td>
-                    <td style="padding: 6px 10px;">${wS ? wS.total_retrans : 0}</td>
-                    <td style="padding: 6px 10px; color: ${fS && fS.total_retrans > 0 ? 'var(--status-red)' : 'inherit'}; font-weight: ${fS && fS.total_retrans > 0 ? '700' : 'normal'};">${fS ? fS.total_retrans : 0}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                    <td style="padding: 6px 10px; color: var(--text-muted);">Congestion Window (cwnd)</td>
-                    <td style="padding: 6px 10px;">${wS && wS.snd_cwnd ? wS.snd_cwnd + ' pkts' : '-'}</td>
-                    <td style="padding: 6px 10px;">${fS && fS.snd_cwnd ? fS.snd_cwnd + ' pkts' : '-'}</td>
-                  </tr>
-                  <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                    <td style="padding: 6px 10px; color: var(--text-muted);">Path MTU (PMTU)</td>
-                    <td style="padding: 6px 10px;">${wS && wS.pmtu ? wS.pmtu + ' B' : '-'}</td>
-                    <td style="padding: 6px 10px;">${fS && fS.pmtu ? fS.pmtu + ' B' : '-'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 6px 10px; color: var(--text-muted);">Lost Packets</td>
-                    <td style="padding: 6px 10px;">${wS ? wS.lost : 0}</td>
-                    <td style="padding: 6px 10px; color: ${fS && fS.lost > 0 ? 'var(--status-red)' : 'inherit'};">${fS ? fS.lost : 0}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          `;
-        }
-      }
-
-      // TLS Certificate Details
       if (tier.tlsData) {
         const wTLS = tier.tlsData.w;
         const fTLS = tier.tlsData.f;
         extraHTML += `
-          <div style="margin-top: 16px;">
-            <div style="font-size: 12px; font-weight: 700; color: var(--accent-cyan); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">TLS Handshake & Certificate Details</div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--font-mono); background: rgba(12, 17, 29, 0.6); border-radius: 6px; overflow: hidden;">
-              <thead>
-                <tr style="border-bottom: 1px solid var(--border); text-align: left; color: var(--text-muted); font-size: 11px;">
-                  <th style="padding: 6px 10px;">Property</th>
-                  <th style="padding: 6px 10px;">Working</th>
-                  <th style="padding: 6px 10px;">Failing</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Handshake</td>
-                  <td style="padding: 6px 10px; color: var(--status-green);">${wTLS && wTLS.handshake_success ? '✓ Succeeded' : (wTLS ? '✗ Failed' : '-')}</td>
-                  <td style="padding: 6px 10px; color: ${fTLS && fTLS.handshake_success ? 'var(--status-green)' : 'var(--status-red)'}; font-weight: 700;">${fTLS && fTLS.handshake_success ? '✓ Succeeded' : (fTLS ? '✗ Failed' : '-')}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Protocol Version</td>
-                  <td style="padding: 6px 10px;">${wTLS && wTLS.version ? escapeHtml(wTLS.version) : '-'}</td>
-                  <td style="padding: 6px 10px;">${fTLS && fTLS.version ? escapeHtml(fTLS.version) : '-'}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Cipher Suite</td>
-                  <td style="padding: 6px 10px;">${wTLS && wTLS.cipher_suite ? escapeHtml(wTLS.cipher_suite) : '-'}</td>
-                  <td style="padding: 6px 10px;">${fTLS && fTLS.cipher_suite ? escapeHtml(fTLS.cipher_suite) : '-'}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Certificate Issuer</td>
-                  <td style="padding: 6px 10px;">${wTLS && wTLS.issuer ? escapeHtml(wTLS.issuer) : '-'}</td>
-                  <td style="padding: 6px 10px;">${fTLS && fTLS.issuer ? escapeHtml(fTLS.issuer) : '-'}</td>
-                </tr>
-                <tr style="border-bottom: 1px solid rgba(56, 75, 112, 0.2);">
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Expiry</td>
-                  <td style="padding: 6px 10px;">${wTLS && wTLS.days_until_expiry ? wTLS.days_until_expiry + ' days left' : '-'}</td>
-                  <td style="padding: 6px 10px;">${fTLS && fTLS.days_until_expiry ? fTLS.days_until_expiry + ' days left' : '-'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 6px 10px; color: var(--text-muted);">Handshake Error</td>
-                  <td style="padding: 6px 10px;">${wTLS && wTLS.error ? escapeHtml(wTLS.error) : 'none'}</td>
-                  <td style="padding: 6px 10px; color: ${fTLS && fTLS.error ? 'var(--status-red)' : 'inherit'};">${fTLS && fTLS.error ? escapeHtml(fTLS.error) : 'none'}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <table class="telemetry-table">
+            <thead><tr><th>TLS Property</th><th>Working</th><th>Failing</th></tr></thead>
+            <tbody>
+              <tr><td>Handshake</td><td>${wTLS && wTLS.handshake_success ? 'Succeeded' : (wTLS ? 'Failed' : '-')}</td><td>${fTLS && fTLS.handshake_success ? 'Succeeded' : (fTLS ? 'Failed' : '-')}</td></tr>
+              <tr><td>Version</td><td>${wTLS && wTLS.version ? escapeHtml(wTLS.version) : '-'}</td><td>${fTLS && fTLS.version ? escapeHtml(fTLS.version) : '-'}</td></tr>
+              <tr><td>Issuer</td><td>${wTLS && wTLS.issuer ? escapeHtml(wTLS.issuer) : '-'}</td><td>${fTLS && fTLS.issuer ? escapeHtml(fTLS.issuer) : '-'}</td></tr>
+              <tr><td>Error</td><td>${wTLS && wTLS.error ? escapeHtml(wTLS.error) : 'none'}</td><td>${fTLS && fTLS.error ? escapeHtml(fTLS.error) : 'none'}</td></tr>
+            </tbody>
+          </table>
         `;
       }
 
-      const inspector = document.getElementById('inspector-content');
-      inspector.innerHTML = `
-        <div style="font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px;">${escapeHtml(tier.label)}</div>
-        <div style="font-size: 12px; color: ${tier.same ? 'var(--status-green)' : 'var(--status-amber)'}; font-weight: 600; margin-bottom: 14px;">
-          ${tier.same ? '✓ Identical between environments' : '⚠ Path divergence detected at this stage'}
+      document.getElementById('inspector-content').innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <div style="font-size: 15px; font-weight: 600;">${escapeHtml(tier.label)}</div>
+          <span class="status-pill ${tier.same ? 'success' : 'attention'}">${tier.same ? 'Matching' : 'Divergent'}</span>
         </div>
-        <div class="inspector-meta">
-          <div class="meta-box">
-            <div class="meta-box-label">Working Value</div>
-            <div class="meta-box-val">${escapeHtml(tier.wVal)}</div>
+        <div class="kv-grid">
+          <div class="kv-item">
+            <div class="kv-label">Working</div>
+            <div class="kv-val">${escapeHtml(tier.wVal)}</div>
           </div>
-          <div class="meta-box">
-            <div class="meta-box-label">Failing Value</div>
-            <div class="meta-box-val">${escapeHtml(tier.fVal)}</div>
-          </div>
-          <div class="meta-box">
-            <div class="meta-box-label">Causal Relevance</div>
-            <div class="meta-box-val" style="color: var(--accent-cyan);">${escapeHtml(tier.relevance || 'HIGH')}</div>
+          <div class="kv-item">
+            <div class="kv-label">Failing</div>
+            <div class="kv-val">${escapeHtml(tier.fVal)}</div>
           </div>
         </div>
+        <div style="font-size: 11.5px; color: var(--fg-muted);">Relevance: <strong>${escapeHtml(tier.relevance || 'HIGH')}</strong></div>
         ${extraHTML}
       `;
     }
 
     function renderReasoning(exp, targetRaw) {
-      if (!exp) return;
+      const remCard = document.getElementById('overview-remediation-card');
+      if (exp.remediation && exp.remediation.immediate_bash) {
+        remCard.style.display = 'block';
+        document.getElementById('rem-cmd-text').textContent = '$ ' + exp.remediation.immediate_bash;
+        document.getElementById('rem-explanation').textContent = exp.remediation.explanation || '';
+        if (exp.remediation.verification_cmd) {
+          document.getElementById('rem-verify-cmd').textContent = exp.remediation.verification_cmd;
+          document.getElementById('rem-verify-container').style.display = 'block';
+        } else {
+          document.getElementById('rem-verify-container').style.display = 'none';
+        }
+      } else {
+        remCard.style.display = 'none';
+      }
 
       const hypList = document.getElementById('hypotheses-list');
       hypList.innerHTML = '';
-
-      if (exp.summary) {
-        const summaryBox = document.createElement('div');
-        summaryBox.style.cssText = "font-size: 13px; line-height: 1.6; color: var(--text-main); margin-bottom: 16px; padding: 12px; background: rgba(0, 229, 255, 0.05); border-left: 3px solid var(--accent-cyan); border-radius: 4px;";
-        summaryBox.textContent = exp.summary;
-        hypList.appendChild(summaryBox);
-      }
-
       if (exp.hypotheses && exp.hypotheses.length > 0) {
         exp.hypotheses.forEach(h => {
-          const card = document.createElement('div');
-          card.className = "hypothesis-card";
-          const badgeClass = `badge-${h.support_level}`;
-          card.innerHTML = `
-            <div class="hyp-header">
+          const item = document.createElement('div');
+          item.className = 'hyp-item';
+          const level = String(h.support_level || '').toUpperCase();
+          const pill = (level === 'SUPPORTED' || level === 'STRONG') ? 'success' : (level === 'REFUTED' ? 'danger' : 'neutral');
+          item.innerHTML = `
+            <div class="hyp-top">
               <span class="hyp-title">${escapeHtml(h.title)}</span>
-              <span class="hyp-badge ${badgeClass}">${escapeHtml(h.support_level)}</span>
+              <span class="status-pill ${pill}">${escapeHtml(h.support_level)}</span>
             </div>
-            <div class="hyp-rationale">${escapeHtml(h.rationale)}</div>
+            <p class="hyp-desc">${escapeHtml(h.rationale)}</p>
           `;
-          hypList.appendChild(card);
+          hypList.appendChild(item);
         });
+      } else {
+        hypList.innerHTML = '<p style="font-size: 13px; color: var(--fg-muted);">No additional hypotheses available.</p>';
       }
 
+      const pCard = document.getElementById('probe-recommendation');
       if (exp.next_best_probe) {
-        const pCard = document.getElementById('probe-recommendation');
         pCard.style.display = 'block';
         document.getElementById('probe-action').textContent = `${exp.next_best_probe.probe_name}(${exp.next_best_probe.parameter || ''})`;
-        document.getElementById('probe-reason').textContent = exp.next_best_probe.reason;
-
-        const cmd = `netdiff probe ${exp.next_best_probe.probe_name} ${exp.next_best_probe.parameter || ''} -t ${targetRaw}`.trim();
-        document.getElementById('probe-cmd-text').textContent = cmd;
-      }
-
-      if (exp.remediation) {
-        const rCard = document.getElementById('remediation-recommendation');
-        if (rCard) {
-          rCard.style.display = 'block';
-          document.getElementById('rem-explanation').textContent = exp.remediation.explanation || '';
-          document.getElementById('rem-cmd-text').textContent = exp.remediation.immediate_bash || '';
-          if (exp.remediation.verification_cmd) {
-            document.getElementById('rem-verify-cmd').textContent = exp.remediation.verification_cmd;
-            document.getElementById('rem-verify-container').style.display = 'block';
-          } else {
-            document.getElementById('rem-verify-container').style.display = 'none';
-          }
-        }
+        document.getElementById('probe-reason').textContent = exp.next_best_probe.reason || '';
+        document.getElementById('probe-cmd-text').textContent = `netdiff probe ${exp.next_best_probe.probe_name} ${exp.next_best_probe.parameter || ''} -t ${targetRaw}`.trim();
+      } else {
+        pCard.style.display = 'none';
       }
     }
 
     function copyRemCmd() {
-      const text = document.getElementById('rem-cmd-text').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        showToast("Copied remediation fix to clipboard!");
-      });
+      const raw = document.getElementById('rem-cmd-text').textContent.replace(/^\$\s*/, '');
+      navigator.clipboard.writeText(raw).then(() => showToast('Copied remediation command'));
     }
-
     function copyProbeCmd() {
-      const text = document.getElementById('probe-cmd-text').textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        showToast("Copied command to clipboard!");
-      });
+      const raw = document.getElementById('probe-cmd-text').textContent;
+      navigator.clipboard.writeText(raw).then(() => showToast('Copied validation probe command'));
     }
-
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.textContent = msg;
       toast.style.display = 'block';
-      setTimeout(() => { toast.style.display = 'none'; }, 2400);
+      setTimeout(() => { toast.style.display = 'none'; }, 2200);
     }
 
     function downloadReport() {
@@ -1208,82 +865,116 @@
         const blob = new Blob([window.__NETDIFF_MD__], { type: 'text/markdown;charset=utf-8' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `netdiff-incident-${(appData && appData.comparison && appData.comparison.target && appData.comparison.target.host) || 'report'}.md`;
+        a.download = `netdiff-${(appData && appData.comparison && appData.comparison.target.host) || 'report'}.md`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-      } else {
-        window.open('/api/report', '_blank');
+        return;
       }
+      window.open('/api/report', '_blank');
     }
 
     function openRawJSON() {
       if (appData) {
         const blob = new Blob([JSON.stringify(appData, null, 2)], { type: 'application/json;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        window.open(url, '_blank');
+        window.open(URL.createObjectURL(blob), '_blank');
       } else {
         window.open('/api/data', '_blank');
       }
     }
 
-    function formatNeighbor(n) {
-      if (!n || !n.ip) return "none";
-      const mac = n.mac || "no-mac";
-      const state = n.state || "REACHABLE";
-      return `${n.ip} → ${mac} (${state})`;
+    function openUploadModal() { document.getElementById('upload-modal').classList.add('active'); }
+    function closeUploadModal() { document.getElementById('upload-modal').classList.remove('active'); }
+
+    async function processUploadedFiles() {
+      const fW = document.getElementById('file-working').files[0];
+      const fF = document.getElementById('file-failing').files[0];
+      if (!fW || !fF) { alert('Please select both snapshot files.'); return; }
+      try {
+        runClientSideDiff(JSON.parse(await fW.text()), JSON.parse(await fF.text()));
+        closeUploadModal();
+        switchTab('overview');
+        showToast('Compared custom snapshots');
+      } catch (err) { alert('Invalid JSON snapshot: ' + err.message); }
     }
 
-    function formatTCP(t) {
-      if (!t) return "unknown";
-      if (t.status !== "connected") {
-        return t.error ? `${t.status} (${t.error})` : `${t.status}`;
+    window.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-overlay').classList.add('active'); });
+    document.getElementById('drop-overlay').addEventListener('dragleave', e => { e.preventDefault(); document.getElementById('drop-overlay').classList.remove('active'); });
+    document.getElementById('drop-overlay').addEventListener('drop', async e => {
+      e.preventDefault();
+      document.getElementById('drop-overlay').classList.remove('active');
+      const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.ndiff') || f.name.endsWith('.json'));
+      if (files.length < 2) { alert('Drop two .ndiff snapshot files.'); return; }
+      try {
+        runClientSideDiff(JSON.parse(await files[0].text()), JSON.parse(await files[1].text()));
+        switchTab('overview');
+        showToast(`Compared ${files[0].name} vs ${files[1].name}`);
+      } catch (err) { alert('Failed parsing files: ' + err.message); }
+    });
+
+    function runClientSideDiff(snapA, snapB) {
+      const isAFailing = (snapA.tcp && snapA.tcp.status !== 'connected') || (snapA.dns && !snapA.dns.success);
+      const working = isAFailing ? snapB : snapA;
+      const failing = isAFailing ? snapA : snapB;
+      const target = working.target || failing.target || { raw: 'unknown:0', host: 'unknown', port: 0, protocol: 'tcp' };
+      let earliest = 'TCP: Handshake timeout on target port';
+      let remCmd = `sudo ip route get ${target.host || ''}`;
+      let remVerify = 'ip route show';
+      let remReason = 'Restore network path parity with the working environment.';
+
+      if (working.dns && failing.dns && working.dns.success !== failing.dns.success) {
+        earliest = 'DNS: Resolution failed in failing environment';
+        remCmd = `resolvectl query ${target.host}`;
+        remVerify = `dig ${target.host}`;
+        remReason = 'Restore internal DNS server reachability.';
+      } else if (working.route && failing.route && (working.route.policy_rule || '') !== (failing.route.policy_rule || '')) {
+        earliest = `Policy Rule: ${working.route.policy_rule || 'none'} != ${failing.route.policy_rule || 'main'}`;
+        const dest = (failing.route && failing.route.destination_ip) || target.host;
+        remCmd = `sudo ip rule add to ${dest}/32 lookup ${working.route.table || 200}`;
+        remVerify = `ip rule show | grep ${working.route.table || 200}`;
+        remReason = `Directs traffic for ${dest} via table ${working.route.table || 200}.`;
+      } else if (working.route && failing.route && (working.route.egress_interface || '') !== (failing.route.egress_interface || '')) {
+        earliest = `Egress Interface: ${working.route.egress_interface} != ${failing.route.egress_interface}`;
+        remCmd = `sudo ip route add ${target.host} dev ${working.route.egress_interface}`;
+        remVerify = `ip route get ${target.host}`;
+        remReason = `Restores egress routing via ${working.route.egress_interface}.`;
+      } else if (working.interface && failing.interface && working.interface.oper_state !== failing.interface.oper_state) {
+        earliest = `Interface State: ${working.interface.name} (${working.interface.oper_state}) != ${failing.interface.name} (${failing.interface.oper_state})`;
+        remCmd = `sudo ip link set dev ${failing.interface.name} up`;
+        remVerify = `ip link show dev ${failing.interface.name}`;
+        remReason = `Brings up downed interface ${failing.interface.name}.`;
+      } else if (failing.firewall && failing.firewall.active && (!working.firewall || !working.firewall.active)) {
+        earliest = 'Firewall: Active packet filter blocking target port';
+        remCmd = `sudo iptables -D OUTPUT -p ${target.protocol} --dport ${target.port} -j DROP`;
+        remVerify = 'sudo iptables -L OUTPUT -n -v';
+        remReason = `Removes blocking filter rule on port ${target.port}.`;
       }
-      let res = `connected (${t.latency_ms}ms)`;
-      if (t.socket_info) {
-        if (t.socket_info.total_retrans > 0) {
-          res += ` [${t.socket_info.total_retrans} retrans]`;
-        } else if (t.socket_info.rtt_us > 0) {
-          res += ` [RTT ${(t.socket_info.rtt_us / 1000).toFixed(1)}ms]`;
+
+      appData = {
+        comparison: {
+          target,
+          working_host: (working.metadata && working.metadata.hostname) || 'working-host',
+          failing_host: (failing.metadata && failing.metadata.hostname) || 'failing-host',
+          working_snapshot: working,
+          failing_snapshot: failing,
+          earliest_divergence: earliest
+        },
+        explanation: {
+          summary: earliest,
+          hypotheses: [{ title: earliest, support_level: 'SUPPORTED', rationale: 'Earliest causal divergence identified across host snapshots.' }],
+          remediation: { immediate_bash: remCmd, verification_cmd: remVerify, explanation: remReason },
+          next_best_probe: { probe_name: 'TEST_DIRECT_IP', parameter: (working.route && working.route.destination_ip) || '', reason: 'Verify baseline IP reachability.' }
         }
-      }
-      return res;
+      };
+      renderDashboard(appData);
     }
 
-    function formatTLS(t) {
-      if (!t) return "not performed";
-      if (!t.handshake_success) {
-        return `failed (${t.error || 'unknown'})`;
-      }
-      let res = `✓ ${t.version || 'TLS'} (${t.cipher_suite || 'cipher'})`;
-      if (t.issuer) res += ` [issuer: ${t.issuer}]`;
-      if (t.days_until_expiry) res += ` [${t.days_until_expiry}d left]`;
-      return res;
-    }
-
-    function formatDNS(dns) {
-      if (!dns) return "none";
-      if (!dns.success) return "failed (" + (dns.error || "unknown") + ")";
-      if (dns.a_records && dns.a_records.length > 0) return dns.a_records.join(", ");
-      return "resolved";
-    }
-
-    function formatRouteLookup(route) {
-      if (!route) return "unknown";
-      if (route.success) return "success";
-      if (route.error) return "failed: " + route.error;
-      return "failed";
-    }
-
-    function escapeHtml(str) {
-      if (!str) return "";
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
+    function formatNeighbor(n) { return (!n || !n.ip) ? 'none' : `${n.ip} -> ${n.mac || 'no-mac'} (${n.state || 'REACHABLE'})`; }
+    function formatTCP(t) { return !t ? 'unknown' : (t.status !== 'connected' ? (t.error ? `${t.status} (${t.error})` : `${t.status}`) : `connected (${t.latency_ms || 0}ms)`); }
+    function formatTLS(t) { return !t ? 'not performed' : (!t.handshake_success ? `failed (${t.error || 'unknown'})` : `${t.version || 'TLS'} (${t.cipher_suite || 'cipher'})`); }
+    function formatDNS(d) { return !d ? 'none' : (!d.success ? `failed (${d.error || 'unknown'})` : (d.a_records && d.a_records.length > 0 ? d.a_records.join(', ') : 'resolved')); }
+    function formatRouteLookup(r) { return !r ? 'unknown' : (r.success ? 'success' : (r.error ? `failed: ${r.error}` : 'failed')); }
+    function escapeHtml(s) { return !s ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
 
     window.addEventListener('DOMContentLoaded', loadData);
   </script>

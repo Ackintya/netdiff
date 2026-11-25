@@ -9,8 +9,8 @@ import (
 	"netdiff/pkg/model"
 )
 
-// RenderSVG produces a standalone, resolution-independent vector SVG graphic of the Causal DAG.
-// It is designed for embedding or sharing in Slack, Jira, GitHub PRs, and incident reports.
+// RenderSVG produces a standalone, clean GitHub Primer Dark vector SVG graphic of the Causal DAG.
+// Designed for sharing in Slack, Jira, GitHub PRs, and incident reports without visual noise.
 func RenderSVG(comp *model.ComparisonReport, exp *ai.ExplanationReport) string {
 	if comp == nil {
 		return ""
@@ -243,11 +243,11 @@ func RenderSVG(comp *model.ComparisonReport, exp *ai.ExplanationReport) string {
 	}
 
 	// Layout calculations
-	cardWidth := 1020
-	startY := 160
-	stageHeight := 52
-	branchHeight := 34
-	connectorHeight := 24
+	cardWidth := 980
+	startY := 142
+	stageHeight := 48
+	branchHeight := 30
+	connectorHeight := 16
 
 	curY := startY
 	type renderedRow struct {
@@ -270,71 +270,54 @@ func RenderSVG(comp *model.ComparisonReport, exp *ai.ExplanationReport) string {
 	}
 
 	// Root Cause Box
-	rootCauseY := curY + 10
-	rootCauseHeight := 105
-	curY = rootCauseY + rootCauseHeight + 16
+	rootCauseY := curY + 8
+	rootCauseHeight := 92
+	curY = rootCauseY + rootCauseHeight + 14
 
 	// Remediation Box
 	remY := curY
-	remHeight := 130
+	remHeight := 116
 	if exp != nil && exp.Remediation != nil && exp.Remediation.ImmediateBash != "" {
-		curY = remY + remHeight + 20
+		curY = remY + remHeight + 16
 	} else {
 		remHeight = 0
 	}
 
-	totalHeight := curY + 40
+	totalHeight := curY + 24
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">`+"\n", cardWidth, totalHeight, cardWidth, totalHeight))
 	sb.WriteString(`  <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#090d16"/>
-      <stop offset="100%" stop-color="#0f172a"/>
-    </linearGradient>
-    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#00e5ff"/>
-      <stop offset="100%" stop-color="#7c4dff"/>
-    </linearGradient>
-    <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#ffd600"/>
-      <stop offset="100%" stop-color="#ff9100"/>
-    </linearGradient>
-    <filter id="glowCyan" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="6" result="blur"/>
-      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-    </filter>
     <style>
-      .text-title { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 19px; font-weight: 700; fill: #ffffff; }
-      .text-sub { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; fill: #8899b8; }
-      .text-mono { font-family: 'JetBrains Mono', monospace, Consolas; font-size: 12px; }
-      .text-label { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
-      .text-badge { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 10px; font-weight: 800; letter-spacing: 0.5px; }
+      .text-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 700; fill: #e6edf3; }
+      .text-sub { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 12px; fill: #8b949e; }
+      .text-mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 12px; }
+      .text-label { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+      .text-badge { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.4px; }
     </style>
   </defs>
 `)
 
-	// Card Background
-	sb.WriteString(fmt.Sprintf(`  <rect width="%d" height="%d" rx="16" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="1.5"/>`+"\n", cardWidth, totalHeight))
+	// Primer Dark Canvas Background
+	sb.WriteString(fmt.Sprintf(`  <rect x="1" y="1" width="%d" height="%d" rx="10" fill="#0d1117" stroke="#30363d" stroke-width="1.5"/>`+"\n", cardWidth-2, totalHeight-2))
 
 	// Header Panel
 	sb.WriteString(`  <!-- Header -->
-  <g transform="translate(36, 32)">
-    <!-- Logo Badge -->
-    <rect x="0" y="0" width="76" height="24" rx="6" fill="url(#headerGrad)"/>
-    <text x="38" y="16" text-anchor="middle" class="text-badge" fill="#000000">NETDIFF</text>
+  <g transform="translate(32, 28)">
+    <rect x="0" y="0" width="68" height="22" rx="6" fill="#21262d" stroke="#30363d" stroke-width="1"/>
+    <text x="34" y="15" text-anchor="middle" class="text-badge" fill="#e6edf3">NETDIFF</text>
     
-    <text x="88" y="18" class="text-title">Causal Dependency Graph</text>
-    <text x="88" y="38" class="text-sub">Differential Network Path Analysis &amp; Earliest Divergence Isolation</text>
+    <text x="80" y="17" class="text-title">Causal Dependency Graph</text>
+    <text x="80" y="36" class="text-sub">Target-scoped network differential &amp; root cause trace</text>
 
     <!-- Target Badge -->
-    <rect x="670" y="2" width="280" height="30" rx="15" fill="#141e33" stroke="#00e5ff" stroke-width="1.2"/>
-    <circle cx="686" cy="17" r="4" fill="#00e5ff"/>
+    <rect x="656" y="0" width="260" height="28" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+    <circle cx="672" cy="14" r="3.5" fill="#58a6ff"/>
 `)
-	sb.WriteString(fmt.Sprintf(`    <text x="700" y="21" class="text-mono" fill="#00e5ff" font-weight="600">%s</text>`+"\n", html.EscapeString(target)))
-	sb.WriteString(fmt.Sprintf(`    <text x="0" y="78" class="text-sub" font-size="13px">Path: <tspan fill="#00e676" font-weight="700">[WORKING] %s</tspan>  vs  <tspan fill="#ff1744" font-weight="700">[FAILING] %s</tspan></text>`+"\n", html.EscapeString(strings.ToUpper(wHost)), html.EscapeString(strings.ToUpper(fHost))))
-	sb.WriteString(`    <text x="590" y="78" class="text-sub" font-size="11px">Legend: <tspan fill="#00e676">● Match</tspan>   <tspan fill="#ff1744">✗ Divergent</tspan>   <tspan fill="#ffd600" font-weight="700">◄── Earliest Divergence (Root Cause)</tspan></text>
-    <line x1="0" y1="94" x2="948" y2="94" stroke="#1e293b" stroke-width="1"/>
+	sb.WriteString(fmt.Sprintf(`    <text x="684" y="18" class="text-mono" fill="#e6edf3" font-weight="600">%s</text>`+"\n", html.EscapeString(target)))
+	sb.WriteString(fmt.Sprintf(`    <text x="0" y="72" class="text-sub" font-size="12.5px">Path: <tspan fill="#3fb950" font-weight="600">[WORKING] %s</tspan>  vs  <tspan fill="#f85149" font-weight="600">[FAILING] %s</tspan></text>`+"\n", html.EscapeString(strings.ToUpper(wHost)), html.EscapeString(strings.ToUpper(fHost))))
+	sb.WriteString(`    <text x="586" y="72" class="text-sub" font-size="11px"><tspan fill="#3fb950">● Match</tspan>   <tspan fill="#f85149">✗ Divergent</tspan>   <tspan fill="#d29922" font-weight="600">■ Root Cause</tspan></text>
+    <line x1="0" y1="88" x2="916" y2="88" stroke="#30363d" stroke-width="1"/>
   </g>
 `)
 
@@ -345,124 +328,123 @@ func RenderSVG(comp *model.ComparisonReport, exp *ai.ExplanationReport) string {
 		h := row.height
 
 		if !row.isBranch {
-			// Stage Card
-			fillBg := "#121a2d"
-			strokeCol := "#24324f"
+			fillBg := "#161b22"
+			strokeCol := "#30363d"
 			if st.Earliest {
-				fillBg = "#262010"
-				strokeCol = "#ffd600"
+				fillBg = "#1b1710"
+				strokeCol = "#d29922"
 			} else if !st.Same {
-				strokeCol = "rgba(255, 23, 68, 0.5)"
+				strokeCol = "#f85149"
 			}
 
 			// Left: Working Box
-			sb.WriteString(fmt.Sprintf(`  <g transform="translate(36, %d)">
-    <rect x="0" y="0" width="370" height="%d" rx="8" fill="%s" stroke="%s" stroke-width="1.2"/>
-    <text x="14" y="20" class="text-label" fill="#00e676">WORKING</text>
-    <text x="14" y="40" class="text-mono" fill="#f0f4fc">%s</text>
+			sb.WriteString(fmt.Sprintf(`  <g transform="translate(32, %d)">
+    <rect x="0" y="0" width="354" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
+    <text x="12" y="18" class="text-label" fill="#3fb950">WORKING</text>
+    <text x="12" y="36" class="text-mono" fill="#e6edf3">%s</text>
   </g>
-`, y, h, fillBg, strokeCol, html.EscapeString(truncateString(st.WVal, 42))))
+`, y, h, fillBg, strokeCol, html.EscapeString(truncateString(st.WVal, 40))))
 
 			// Center: Connector Stage Pill
-			sb.WriteString(fmt.Sprintf(`  <g transform="translate(422, %d)">
-    <rect x="0" y="6" width="176" height="38" rx="19" fill="#0c121e" stroke="%s" stroke-width="1.5"/>
-    <text x="88" y="26" text-anchor="middle" class="text-label" fill="%s">%s</text>
+			sb.WriteString(fmt.Sprintf(`  <g transform="translate(402, %d)">
+    <rect x="0" y="6" width="176" height="36" rx="6" fill="#0d1117" stroke="%s" stroke-width="1"/>
+    <text x="88" y="25" text-anchor="middle" class="text-label" fill="%s">%s</text>
 `, y, strokeCol, func() string {
 				if st.Earliest {
-					return "#ffd600"
+					return "#d29922"
 				}
 				if !st.Same {
-					return "#ff8a80"
+					return "#f85149"
 				}
-				return "#ffffff"
+				return "#e6edf3"
 			}(), html.EscapeString(st.Title)))
 
 			if st.Earliest {
-				sb.WriteString(`    <text x="88" y="38" text-anchor="middle" class="text-badge" fill="#ffd600">ROOT CAUSE</text>` + "\n")
+				sb.WriteString(`    <text x="88" y="37" text-anchor="middle" class="text-badge" fill="#d29922">ROOT CAUSE</text>` + "\n")
 			}
 			sb.WriteString("  </g>\n")
 
 			// Right: Failing Box
-			fStatusText := "✓ MATCH"
-			fStatusColor := "#00e676"
+			fStatusText := "MATCH"
+			fStatusColor := "#3fb950"
 			if !st.Same {
-				fStatusText = "✗ DIVERGENT"
-				fStatusColor = "#ff1744"
+				fStatusText = "DIVERGENT"
+				fStatusColor = "#f85149"
 			}
-			sb.WriteString(fmt.Sprintf(`  <g transform="translate(614, %d)">
-    <rect x="0" y="0" width="370" height="%d" rx="8" fill="%s" stroke="%s" stroke-width="1.2"/>
-    <text x="14" y="20" class="text-label" fill="%s">%s</text>
-    <text x="356" y="20" text-anchor="end" class="text-badge" fill="%s">%s</text>
-    <text x="14" y="40" class="text-mono" fill="#f0f4fc">%s</text>
+			if st.Earliest {
+				fStatusText = "ROOT CAUSE"
+				fStatusColor = "#d29922"
+			}
+			sb.WriteString(fmt.Sprintf(`  <g transform="translate(594, %d)">
+    <rect x="0" y="0" width="354" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
+    <text x="12" y="18" class="text-label" fill="%s">%s</text>
+    <text x="342" y="18" text-anchor="end" class="text-badge" fill="%s">%s</text>
+    <text x="12" y="36" class="text-mono" fill="#e6edf3">%s</text>
   </g>
 `, y, h, fillBg, strokeCol, fStatusColor, func() string {
 				if st.Earliest {
 					return "FAILING (ROOT CAUSE)"
 				}
 				return "FAILING"
-			}(), fStatusColor, fStatusText, html.EscapeString(truncateString(st.FVal, 42))))
+			}(), fStatusColor, fStatusText, html.EscapeString(truncateString(st.FVal, 40))))
 
 		} else {
-			// Sub-Branch Row
-			bBg := "#0d1424"
-			bStroke := "#1e293b"
+			bBg := "#0d1117"
+			bStroke := "#21262d"
 			if st.Earliest {
-				bStroke = "#ffd600"
-				bBg = "#1f1b0c"
+				bStroke = "#d29922"
+				bBg = "#1b1710"
 			} else if !st.Same {
-				bStroke = "rgba(255, 23, 68, 0.3)"
+				bStroke = "#f85149"
 			}
 
 			sb.WriteString(fmt.Sprintf(`  <!-- Branch: %s -->
-  <g transform="translate(70, %d)">
-    <rect x="0" y="0" width="336" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
-    <text x="12" y="21" class="text-sub" font-size="11px">%s: <tspan fill="#f0f4fc" font-family="'JetBrains Mono', monospace">%s</tspan></text>
+  <g transform="translate(60, %d)">
+    <rect x="0" y="0" width="326" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
+    <text x="10" y="19" class="text-sub" font-size="11px">%s: <tspan fill="#e6edf3" font-family="'SFMono-Regular', Consolas, monospace">%s</tspan></text>
   </g>
-  <g transform="translate(614, %d)">
-    <rect x="0" y="0" width="370" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
-    <text x="12" y="21" class="text-sub" font-size="11px">%s: <tspan fill="%s" font-family="'JetBrains Mono', monospace">%s</tspan></text>
+  <g transform="translate(594, %d)">
+    <rect x="0" y="0" width="354" height="%d" rx="6" fill="%s" stroke="%s" stroke-width="1"/>
+    <text x="10" y="19" class="text-sub" font-size="11px">%s: <tspan fill="%s" font-family="'SFMono-Regular', Consolas, monospace">%s</tspan></text>
   </g>
-`, html.EscapeString(st.Title), y, h, bBg, bStroke, html.EscapeString(st.Title), html.EscapeString(truncateString(st.WVal, 28)), y, h, bBg, bStroke, html.EscapeString(st.Title), func() string {
+`, html.EscapeString(st.Title), y, h, bBg, bStroke, html.EscapeString(st.Title), html.EscapeString(truncateString(st.WVal, 26)), y, h, bBg, bStroke, html.EscapeString(st.Title), func() string {
 				if !st.Same {
-					return "#ff8a80"
+					return "#f85149"
 				}
-				return "#f0f4fc"
-			}(), html.EscapeString(truncateString(st.FVal, 32))))
+				return "#e6edf3"
+			}(), html.EscapeString(truncateString(st.FVal, 30))))
 		}
 	}
 
 	// Root Cause Summary Box
 	sb.WriteString(fmt.Sprintf(`  <!-- Root Cause Box -->
-  <g transform="translate(36, %d)">
-    <rect width="948" height="%d" rx="12" fill="#1b1708" stroke="#ffd600" stroke-width="1.5"/>
-    <circle cx="28" cy="30" r="12" fill="rgba(255, 214, 0, 0.2)"/>
-    <text x="28" y="34" text-anchor="middle" font-family="'Inter', sans-serif" font-weight="900" fill="#ffd600" font-size="13">!</text>
-    <text x="50" y="28" class="text-label" fill="#ffd600">ROOT CAUSE (Earliest Divergence Isolated)</text>
-    <text x="50" y="52" class="text-title" font-size="15px" fill="#ffffff">%s</text>
-    <text x="50" y="78" class="text-sub" font-size="12px" fill="#cbd5e1">%s</text>
+  <g transform="translate(32, %d)">
+    <rect width="916" height="%d" rx="8" fill="#161b22" stroke="#d29922" stroke-width="1.2"/>
+    <text x="20" y="26" class="text-label" fill="#d29922">ROOT CAUSE (EARLIEST DIVERGENCE ISOLATED)</text>
+    <text x="20" y="50" class="text-title" font-size="15px">%s</text>
+    <text x="20" y="72" class="text-sub" font-size="12px">%s</text>
   </g>
 `, rootCauseY, rootCauseHeight, html.EscapeString(truncateString(earliest, 95)), func() string {
 		if exp != nil && exp.Summary != "" {
-			return html.EscapeString(truncateString(exp.Summary, 125))
+			return html.EscapeString(truncateString(exp.Summary, 120))
 		}
-		return "Upstream causal path diverged at this node; all downstream failures are cascade symptoms."
+		return "Upstream causal path diverged at this node; downstream failures are cascade symptoms."
 	}()))
 
 	// Remediation Box (if present)
 	if remHeight > 0 {
 		rem := exp.Remediation
 		sb.WriteString(fmt.Sprintf(`  <!-- Remediation Playbook -->
-  <g transform="translate(36, %d)">
-    <rect width="948" height="%d" rx="12" fill="#0c1815" stroke="#00e676" stroke-width="1.5"/>
-    <text x="24" y="28" class="text-label" fill="#00e676">ACTIONABLE REMEDIATION PLAYBOOK</text>
+  <g transform="translate(32, %d)">
+    <rect width="916" height="%d" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+    <text x="20" y="26" class="text-label" fill="#3fb950">ACTIONABLE REMEDIATION PLAYBOOK</text>
     
-    <text x="24" y="54" class="text-sub" font-size="12px" fill="#94a3b8">Immediate Bash Fix:</text>
-    <rect x="24" y="62" width="900" height="28" rx="6" fill="#050b09" stroke="rgba(0, 230, 118, 0.3)"/>
-    <text x="36" y="81" class="text-mono" fill="#00e676" font-weight="700">$ %s</text>
+    <rect x="20" y="40" width="876" height="30" rx="6" fill="#0d1117" stroke="#30363d"/>
+    <text x="32" y="60" class="text-mono" fill="#e6edf3" font-weight="600">$ %s</text>
 
-    <text x="24" y="110" class="text-sub" font-size="11px">Verification: <tspan fill="#00e5ff" font-family="'JetBrains Mono', monospace">%s</tspan>  |  <tspan fill="#cbd5e1">%s</tspan></text>
+    <text x="20" y="94" class="text-sub" font-size="11.5px">Verify: <tspan fill="#58a6ff" font-family="'SFMono-Regular', Consolas, monospace">%s</tspan>  ·  %s</text>
   </g>
-`, remY, remHeight, html.EscapeString(rem.ImmediateBash), html.EscapeString(rem.VerificationCmd), html.EscapeString(truncateString(rem.Explanation, 75))))
+`, remY, remHeight, html.EscapeString(rem.ImmediateBash), html.EscapeString(rem.VerificationCmd), html.EscapeString(truncateString(rem.Explanation, 70))))
 	}
 
 	sb.WriteString("</svg>\n")
